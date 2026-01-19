@@ -1,0 +1,34 @@
+name: Aggiorna Sito CAI
+
+on:
+  schedule:
+    - cron: '0 09,15,22 * * *' # Gira alle 9:00, 15:00 e 22:00 UTC
+  workflow_dispatch: # Permette avvio manuale
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run aggregator
+        run: python aggregator.py
+
+      - name: Commit and Push
+        run: |
+          git config --global user.name 'GitHub Action'
+          git config --global user.email 'action@github.com'
+          git add index.html
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Aggiornamento automatico" && git push)
