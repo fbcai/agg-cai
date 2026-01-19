@@ -1,16 +1,12 @@
-roimport feedparser
+import feedparser
 from datetime import datetime
 import time
+import re  # <--- NUOVA IMPORTAZIONE PER PULIRE L'HTML
 
 # --- CONFIGURAZIONE GRUPPI ---
-# Qui definiamo le diverse pagine che vogliamo creare.
-# La chiave (es. "index.html") è il nome del file.
-# "title" è il titolo della pagina.
-# "sites" è la lista dei siti per quel gruppo.
-
 GROUPS = {
     "index.html": {
-        "title": "Toscana Est (Arezzo, Sansepolcro, Stia-Casentino, Valdarno Superiore)",
+        "title": "Toscana Est (Arezzo, Sansepolcro, Stia, Valdarno)",
         "sites": [
             {"url": "https://www.caiarezzo.it/feed/", "name": "CAI Arezzo", "color": "#e74c3c"},
             {"url": "https://www.caisansepolcro.it/feed/", "name": "CAI Sansepolcro", "color": "#3498db"},
@@ -23,7 +19,6 @@ GROUPS = {
         "sites": [
             {"url": "https://www.caipisa.it/feed/", "name": "CAI Pisa", "color": "#e67e22"},
             {"url": "https://www.caivaldarnoinferiore.it/feed/", "name": "CAI Valdarno Inf.", "color": "#1abc9c"},
-            # Nota: Per i sottodomini cai.it proviamo il feed standard, se fallisce va verificato l'URL specifico
             {"url": "https://organizzazione.cai.it/sez-livorno/feed/", "name": "CAI Livorno", "color": "#9b59b6"},
             {"url": "https://www.cailucca.it/feed/", "name": "CAI Lucca", "color": "#34495e"},
             {"url": "https://www.caiviareggio.it/feed/", "name": "CAI Viareggio", "color": "#2980b9"}
@@ -31,15 +26,20 @@ GROUPS = {
     }
 }
 
-# Funzione per generare il menu di navigazione
+# Funzione per pulire l'HTML (RIMUOVE TUTTI I TAG)
+def clean_html(raw_html):
+    cleanr = re.compile('<.*?>')
+    cleantext = re.sub(cleanr, '', raw_html)
+    return cleantext
+
 def get_nav_html(current_page):
     nav = '<nav style="margin-bottom: 30px; text-align: center;">'
     for filename, data in GROUPS.items():
-        style = 'text-decoration: none; margin: 0 10px; padding: 8px 15px; border-radius: 20px; font-weight: bold;'
+        style = 'display: inline-block; text-decoration: none; margin: 5px 10px; padding: 8px 15px; border-radius: 20px; font-weight: bold;'
         if filename == current_page:
-            style += 'background-color: #2563eb; color: white;' # Stile bottone attivo
+            style += 'background-color: #2563eb; color: white;'
         else:
-            style += 'background-color: #e5e7eb; color: #333;' # Stile bottone inattivo
+            style += 'background-color: #e5e7eb; color: #333;'
         nav += f'<a href="{filename}" style="{style}">{data["title"]}</a>'
     nav += '</nav>'
     return nav
@@ -52,6 +52,7 @@ def generate_page(filename, group_data):
         print(f"Scaricando {site['name']}...")
         try:
             feed = feedparser.parse(site['url'])
+            # Controllo se il feed è valido
             if not feed.entries:
                 print(f"  ! Nessun articolo o feed non valido per {site['url']}")
                 continue
@@ -65,15 +66,20 @@ def generate_page(filename, group_data):
                 else:
                     dt_obj = datetime.now()
 
-                # Pulizia summary
+                # --- PULIZIA AVANZATA ---
                 summary = entry.get("summary", "")
-                summary = summary.replace("<p>", "").replace("</p>", "").replace("[&hellip;]", "...")
+                # Rimuove tutti i tag HTML per evitare che rompano il layout
+                summary_clean = clean_html(summary)
                 
+                # Taglia il testo se troppo lungo
+                if len(summary_clean) > 250:
+                    summary_clean = summary_clean[:250] + "..."
+
                 events.append({
                     "title": entry.title,
                     "link": entry.link,
                     "date": dt_obj,
-                    "summary": summary[:250] + "..." if len(summary) > 250 else summary,
+                    "summary": summary_clean,
                     "source": site["name"],
                     "color": site["color"]
                 })
