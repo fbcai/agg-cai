@@ -1,4 +1,4 @@
-import feedparser
+roimport feedparser
 from datetime import datetime
 import time
 
@@ -10,7 +10,7 @@ import time
 
 GROUPS = {
     "index.html": {
-        "title": "Toscana Est (Arezzo, Stia, Valdarno)",
+        "title": "Toscana Est (Arezzo, Sansepolcro, Stia-Casentino, Valdarno Superiore)",
         "sites": [
             {"url": "https://www.caiarezzo.it/feed/", "name": "CAI Arezzo", "color": "#e74c3c"},
             {"url": "https://www.caisansepolcro.it/feed/", "name": "CAI Sansepolcro", "color": "#3498db"},
@@ -19,7 +19,7 @@ GROUPS = {
         ]
     },
     "costa.html": {
-        "title": "Toscana Ovest (Pisa, Livorno, Lucca)",
+        "title": "Toscana Ovest (Pisa, Livorno, Lucca, Valdarno Inferiore)",
         "sites": [
             {"url": "https://www.caipisa.it/feed/", "name": "CAI Pisa", "color": "#e67e22"},
             {"url": "https://www.caivaldarnoinferiore.it/feed/", "name": "CAI Valdarno Inf.", "color": "#1abc9c"},
