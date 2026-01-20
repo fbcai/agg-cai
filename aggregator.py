@@ -217,9 +217,9 @@ def generate_page(filename, group_data):
     # 2. CONTROLLO SPECIALE SANSEPOLCRO (SOLO INDEX)
     # Esegue lo scraping dei PDF oltre al nuovo feed RSS specificato
     if filename == "index.html":
-        sansepolcro_pdfs = get_sansepolcro_pdfs()
-        if sansepolcro_pdfs:
-            events.extend(sansepolcro_pdfs)
+        sansepolcro_media = get_sansepolcro_media()
+        if sansepolcro_media:
+            events.extend(sansepolcro_media)
 
     # 3. ORDINA TUTTO PER DATA
     events.sort(key=lambda x: x["date"], reverse=True)
