@@ -38,10 +38,10 @@ def clean_html(raw_html):
     return cleantext
 
 def is_recent(dt_obj):
-    """Controlla se l'evento è stato pubblicato nelle ultime 8 ore."""
+    """Controlla se l'evento è stato pubblicato nelle ultime 9 ore."""
     now = datetime.now()
     diff = now - dt_obj
-    return diff < timedelta(hours=8)
+    return diff < timedelta(hours=9)
 
 def get_sansepolcro_pdfs():
     """Scarica i PDF dalle pagine specifiche di CAI Sansepolcro, evitando duplicati."""
