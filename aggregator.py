@@ -12,17 +12,10 @@ TG_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TG_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 def send_telegram_alert(title, link, source):
-    """Invia un messaggio su Telegram se le chiavi sono presenti."""
-    if not TG_TOKEN or not TG_CHAT_ID:
-        return 
-    
+    if not TG_TOKEN or not TG_CHAT_ID: return 
     message = f"🚨 *Nuovo Evento CAI*\n\n📍 *{source}*\n📝 {title}\n\n🔗 [Leggi di più]({link})"
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    data = {
-        "chat_id": TG_CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown"
-    }
+    data = {"chat_id": TG_CHAT_ID, "text": message, "parse_mode": "Markdown"}
     try:
         requests.post(url, data=data)
         time.sleep(1)
@@ -30,115 +23,97 @@ def send_telegram_alert(title, link, source):
         print(f"Errore invio Telegram: {e}")
 
 # --- FUNZIONI DI SUPPORTO ---
-
 def clean_html(raw_html):
-    """Rimuove i tag HTML per pulire il riassunto."""
     cleanr = re.compile('<.*?>')
-    cleantext = re.sub(cleanr, '', raw_html)
-    return cleantext
+    return re.sub(cleanr, '', raw_html)
 
 def is_recent(dt_obj):
-    """Controlla se l'evento è stato pubblicato nelle ultime 9 ore."""
-    now = datetime.now()
-    diff = now - dt_obj
-    return diff < timedelta(hours=9)
+    # MODIFICATO: Controllo sulle ultime 9 ore (8 ore ciclo + 1 ora buffer)
+    return (datetime.now() - dt_obj) < timedelta(hours=9)
 
 def get_sansepolcro_media():
-    """Scarica PDF e IMMAGINI dalle pagine specifiche di CAI Sansepolcro."""
-    
-    urls_to_scrape = [
+    """Scarica PDF e IMMAGINI (sia linkate che visualizzate) da Sansepolcro."""
+    urls = [
         "https://www.caisansepolcro.it/prossima-escursione/",
-        "https://www.caisansepolcro.it/prossima-serata/",
-        "https://www.caisansepolcro.it/prossime-escursioni-con-prenotazione/"
+        "https://www.caisansepolcro.it/prossime-escursioni-con-prenotazione/",
+        "https://www.caisansepolcro.it/prossima-serata/"
     ]
-    
-    # Estensioni da cercare
-    EXT_PDF = ('.pdf',)
-    EXT_IMG = ('.jpg', '.jpeg', '.png', '.webp')
-    VALID_EXTS = EXT_PDF + EXT_IMG
-
+    EXTS = ('.pdf', '.jpg', '.jpeg', '.png', '.webp')
     media_events = []
-    seen_urls = set()
+    seen = set()
     
-    for url in urls_to_scrape:
-        print(f"Scraping media da: {url}...")
-        
+    for url in urls:
+        print(f"Scraping media: {url}...")
         try:
             headers = {'User-Agent': 'Mozilla/5.0 (compatible; CAI-Aggregator/1.0)'}
-            response = requests.get(url, headers=headers, timeout=15)
-            soup = BeautifulSoup(response.text, 'html.parser')
+            resp = requests.get(url, headers=headers, timeout=15)
+            soup = BeautifulSoup(resp.text, 'html.parser')
             
-            # Cerca tutti i link
+            # 1. CERCA NEI LINK
             for link in soup.find_all('a'):
                 href = link.get('href')
-                
-                # Controllo validità link ed estensione
-                if href and href.lower().endswith(VALID_EXTS):
-                    if not href.startswith('http'):
-                        href = "https://www.caisansepolcro.it" + href.lstrip('/')
+                if href and href.lower().endswith(EXTS):
+                    if not href.startswith('http'): href = "https://www.caisansepolcro.it" + href.lstrip('/')
+                    if href in seen: continue
                     
-                    if href in seen_urls: continue
+                    is_pdf = href.lower().endswith('.pdf')
+                    icon = "📄" if is_pdf else "🖼️"
+                    type_lbl = "[PDF]" if is_pdf else "[IMG]"
                     
-                    # Determina tipo file per icona e etichetta
-                    if href.lower().endswith(EXT_PDF):
-                        icon = "📄"
-                        type_label = "[PDF]"
-                    else:
-                        icon = "🖼️"
-                        type_label = "[IMG]"
-
-                    # Tenta di recuperare un titolo
-                    title_text = link.get_text(strip=True)
+                    title = link.get_text(strip=True)
+                    if not title:
+                        img = link.find('img')
+                        if img and img.get('alt'): title = img.get('alt')
                     
-                    # Se il link non ha testo (es. è un'immagine cliccabile), cerca l'ALT text dell'immagine interna
-                    if not title_text:
-                        img_tag = link.find('img')
-                        if img_tag and img_tag.get('alt'):
-                            title_text = img_tag.get('alt')
-
-                    ignore_words = ['download', 'scarica', 'pdf', 'clicca qui', 'leggi', 'programma', 'locandina', 'full resolution']
+                    bad_words = ['download', 'scarica', 'pdf', 'clicca', 'leggi', 'programma', 'locandina']
+                    if not title or title.lower() in bad_words:
+                        if link.get('title'): title = link.get('title')
+                    if not title or title.lower() in bad_words:
+                        title = f"Locandina/Programma {type_lbl}"
                     
-                    if not title_text or title_text.lower() in ignore_words:
-                        if link.get('title'): title_text = link.get('title')
-                        else: pass 
-
-                    if not title_text or title_text.lower() in ignore_words:
-                        title_text = f"Locandina/Programma {type_label}"
-
-                    seen_urls.add(href)
-
-                    # Cerca data modifica file
+                    seen.add(href)
+                    
                     try:
-                        head_req = requests.head(href, headers=headers, timeout=5)
-                        last_mod = head_req.headers.get('Last-Modified')
-                        if last_mod:
-                            dt_obj = parsedate_to_datetime(last_mod).replace(tzinfo=None)
-                        else:
-                            dt_obj = datetime.now()
-                    except:
-                        dt_obj = datetime.now()
+                        head = requests.head(href, headers=headers, timeout=5)
+                        lmod = head.headers.get('Last-Modified')
+                        dt = parsedate_to_datetime(lmod).replace(tzinfo=None) if lmod else datetime.now()
+                    except: dt = datetime.now()
                     
-                    full_title = f"{icon} {type_label} {title_text}"
-
-                    # NOTIFICA TELEGRAM
-                    if is_recent(dt_obj):
-                        print(f"--> Notifica inviata per: {title_text}")
-                        send_telegram_alert(full_title, href, "CAI Sansepolcro")
-
+                    full_title = f"{icon} {type_lbl} {title}"
+                    if is_recent(dt): send_telegram_alert(full_title, href, "CAI Sansepolcro")
+                    
                     media_events.append({
-                        "title": full_title,
-                        "link": href,
-                        "date": dt_obj,
-                        "summary": f"Media ({type_label}) scaricabile dalla sezione Escursioni Sansepolcro. Clicca per visualizzare.",
-                        "source": "CAI Sansepolcro",
-                        "color": "#3498db"
+                        "title": full_title, "link": href, "date": dt,
+                        "summary": f"Media ({type_lbl}) scaricabile. Clicca per aprire.",
+                        "source": "CAI Sansepolcro", "color": "#3498db"
                     })
-        except Exception as e:
-            print(f"Errore scraping su {url}: {e}")
-            
+
+            # 2. CERCA NELLE IMMAGINI VISUALIZZATE
+            for img in soup.find_all('img'):
+                src = img.get('src')
+                if src and src.lower().endswith(EXTS):
+                    if not src.startswith('http'): src = "https://www.caisansepolcro.it" + src.lstrip('/')
+                    if src in seen: continue
+                    
+                    if "logo" in src.lower() or "icon" in src.lower() or "facebook" in src.lower(): continue
+
+                    title = img.get('alt')
+                    if not title: title = "Locandina (Immagine visualizzata)"
+                    
+                    seen.add(src)
+                    dt = datetime.now()
+                    full_title = f"🖼️ [IMG] {title}"
+                    
+                    media_events.append({
+                        "title": full_title, "link": src, "date": dt,
+                        "summary": "Immagine rilevata nella pagina. Clicca per ingrandire.",
+                        "source": "CAI Sansepolcro", "color": "#3498db"
+                    })
+
+        except Exception as e: print(f"Err scraping {url}: {e}")
     return media_events
 
-# --- CONFIGURAZIONE GRUPPI (AGGIORNATA) ---
+# --- CONFIGURAZIONE GRUPPI ---
 GROUPS = {
     "index.html": {
         "title": "Toscana Est (Arezzo, Sansepolcro, Stia-Casentino, Valdarno Superiore)",
@@ -146,7 +121,7 @@ GROUPS = {
             {"url": "https://www.caiarezzo.it/feed/", "name": "CAI Arezzo", "color": "#e74c3c"},
             {"url": "https://caivaldarnosuperiore.it/feed/", "name": "CAI Valdarno Sup.", "color": "#2ecc71"},
             {"url": "https://caistia.it/feed/", "name": "CAI Stia", "color": "#f1c40f"},
-            {"url": "https://www.caisansepolcro.it/feed/", "name": "CAI Sansepolcro", "color": "#3498db"}
+            {"url": "https://www.caisansepolcro.it/prossima-serata/feed/", "name": "CAI Sansepolcro", "color": "#3498db"}
         ]
     },
     "costa.html": {
@@ -161,83 +136,36 @@ GROUPS = {
     }
 }
 
+# --- GENERAZIONE HTML E NAVIGAZIONE ---
 def get_nav_html(current_page):
-    nav = '<nav style="margin-bottom: 30px; text-align: center;">'
+    nav = '<nav style="margin-bottom: 30px; text-align: center; line-height: 2.5;">'
+    style_all = 'display: inline-block; text-decoration: none; margin: 5px; padding: 8px 15px; border-radius: 20px; font-weight: bold; border: 2px solid #333;'
+    if current_page == "tutto.html": style_all += 'background-color: #333; color: white;'
+    else: style_all += 'background-color: white; color: #333;'
+    nav += f'<a href="tutto.html" style="{style_all}">🌍 TUTTI I SITI</a> '
+
     for filename, data in GROUPS.items():
-        style = 'display: inline-block; text-decoration: none; margin: 5px 10px; padding: 8px 15px; border-radius: 20px; font-weight: bold;'
-        if filename == current_page:
-            style += 'background-color: #2563eb; color: white;'
-        else:
-            style += 'background-color: #e5e7eb; color: #333;'
-        nav += f'<a href="{filename}" style="{style}">{data["title"]}</a>'
+        style = 'display: inline-block; text-decoration: none; margin: 5px; padding: 8px 15px; border-radius: 20px; font-weight: bold;'
+        if filename == current_page: style += 'background-color: #2563eb; color: white;'
+        else: style += 'background-color: #e5e7eb; color: #333;'
+        short_title = data['title'].split('(')[0].strip()
+        nav += f'<a href="{filename}" style="{style}">{short_title}</a>'
     nav += '</nav>'
     return nav
 
-def generate_page(filename, group_data):
-    print(f"--- Elaborazione gruppo: {group_data['title']} ---")
-    events = []
-    
-    # 1. SCARICA DAI FEED RSS
-    for site in group_data["sites"]:
-        print(f"Scaricando {site['name']}...")
-        try:
-            feed = feedparser.parse(site['url'])
-            if not feed.entries:
-                continue
-
-            for entry in feed.entries:
-                if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                    dt_obj = datetime.fromtimestamp(time.mktime(entry.published_parsed))
-                elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
-                    dt_obj = datetime.fromtimestamp(time.mktime(entry.updated_parsed))
-                else:
-                    dt_obj = datetime.now()
-                
-                # NOTIFICA TELEGRAM
-                if is_recent(dt_obj):
-                    print(f"--> Notifica inviata per: {entry.title}")
-                    send_telegram_alert(entry.title, entry.link, site['name'])
-
-                summary = entry.get("summary", "")
-                summary_clean = clean_html(summary)
-                if len(summary_clean) > 250:
-                    summary_clean = summary_clean[:250] + "..."
-
-                events.append({
-                    "title": entry.title,
-                    "link": entry.link,
-                    "date": dt_obj,
-                    "summary": summary_clean,
-                    "source": site["name"],
-                    "color": site["color"]
-                })
-        except Exception as e:
-            print(f"Errore su {site['name']}: {e}")
-
-    # 2. CONTROLLO SPECIALE SANSEPOLCRO (SOLO INDEX)
-    # Esegue lo scraping dei PDF oltre al nuovo feed RSS specificato
-    if filename == "index.html":
-        sansepolcro_media = get_sansepolcro_media()
-        if sansepolcro_media:
-            events.extend(sansepolcro_media)
-
-    # 3. ORDINA TUTTO PER DATA
-    events.sort(key=lambda x: x["date"], reverse=True)
-
-    # 4. GENERA HTML
+def write_html_file(filename, title, events):
     nav_html = get_nav_html(filename)
-    
     html = f"""
     <!DOCTYPE html>
     <html lang="it">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>{group_data['title']} - Aggregatore CAI</title>
+        <title>{title}</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
         <style>
             body {{ font-family: 'Inter', sans-serif; background-color: #f3f4f6; color: #1f2937; margin: 0; padding: 20px; }}
-            .container {{ max-width: 800px; margin: 0 auto; }}
+            .container {{ max-width: 900px; margin: 0 auto; }}
             header {{ text-align: center; margin-bottom: 20px; }}
             h1 {{ color: #111827; margin-bottom: 5px; font-size: 1.8rem; }}
             .meta {{ color: #6b7280; font-size: 0.9em; margin-bottom: 20px; }}
@@ -257,11 +185,11 @@ def generate_page(filename, group_data):
         <div class="container">
             {nav_html}
             <header>
-                <h1>{group_data['title']}</h1>
-                <div class="meta">Aggiornato: {datetime.now().strftime('%d/%m/%Y alle %H:%M')}</div>
+                <h1>{title}</h1>
+                <div class="meta">Ultimo aggiornamento: {datetime.now().strftime('%d/%m/%Y alle %H:%M')}</div>
             </header>
     """
-
+    if not events: html += "<p style='text-align:center;'>Nessuna notizia trovata.</p>"
     for event in events:
         date_str = event["date"].strftime("%d/%m/%Y")
         html += f"""
@@ -272,20 +200,54 @@ def generate_page(filename, group_data):
                 </div>
                 <h2><a href="{event['link']}" target="_blank">{event['title']}</a></h2>
                 <div class="desc">{event['summary']}</div>
-                <a href="{event['link']}" class="read-more" target="_blank">Leggi di più &rarr;</a>
+                <a href="{event['link']}" class="read-more" target="_blank">Apri risorsa &rarr;</a>
             </div>
         """
-
-    html += """
-        </div>
-    </body>
-    </html>
-    """
-
-    with open(filename, "w", encoding="utf-8") as f:
-        f.write(html)
-    print(f"Generato {filename}")
+    html += "</div></body></html>"
+    with open(filename, "w", encoding="utf-8") as f: f.write(html)
+    print(f"✅ Generato: {filename}")
 
 # --- ESECUZIONE PRINCIPALE ---
+GLOBAL_EVENTS = [] 
 for filename, group_data in GROUPS.items():
-    generate_page(filename, group_data)
+    print(f"\n--- Elaborazione Gruppo: {group_data['title']} ---")
+    current_group_events = []
+    
+    # A. RSS
+    for site in group_data["sites"]:
+        print(f"Scaricando {site['name']}...")
+        try:
+            feed = feedparser.parse(site['url'])
+            if not feed.entries: continue
+            for entry in feed.entries:
+                if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                    dt = datetime.fromtimestamp(time.mktime(entry.published_parsed))
+                elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
+                    dt = datetime.fromtimestamp(time.mktime(entry.updated_parsed))
+                else: dt = datetime.now()
+                
+                if is_recent(dt):
+                    print(f"--> Notifica: {entry.title}")
+                    send_telegram_alert(entry.title, entry.link, site['name'])
+                
+                summ = clean_html(entry.get("summary", ""))
+                if len(summ) > 250: summ = summ[:250] + "..."
+                ev = {"title": entry.title, "link": entry.link, "date": dt, "summary": summ, "source": site["name"], "color": site["color"]}
+                current_group_events.append(ev)
+        except Exception as e: print(f"Errore {site['name']}: {e}")
+
+    # B. Scraping Sansepolcro
+    site_names_in_group = [s['name'] for s in group_data['sites']]
+    if "CAI Sansepolcro" in site_names_in_group:
+        extra_events = get_sansepolcro_media()
+        current_group_events.extend(extra_events)
+
+    # C. Salva Gruppo
+    current_group_events.sort(key=lambda x: x["date"], reverse=True)
+    write_html_file(filename, group_data['title'], current_group_events)
+    GLOBAL_EVENTS.extend(current_group_events)
+
+# Totale
+print(f"\n--- Generazione Pagina Generale ---")
+GLOBAL_EVENTS.sort(key=lambda x: x["date"], reverse=True)
+write_html_
