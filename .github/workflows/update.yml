@@ -24,6 +24,9 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run aggregator
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python aggregator.py
 
       - name: Commit and Push
