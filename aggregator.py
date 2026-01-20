@@ -43,48 +43,71 @@ def is_recent(dt_obj):
     diff = now - dt_obj
     return diff < timedelta(hours=9)
 
-def get_sansepolcro_pdfs():
-    """Scarica i PDF dalle pagine specifiche di CAI Sansepolcro, evitando duplicati."""
+def get_sansepolcro_media():
+    """Scarica PDF e IMMAGINI dalle pagine specifiche di CAI Sansepolcro."""
     
-    # LISTA DELLE PAGINE DA CONTROLLARE (Scraping extra oltre ai feed)
     urls_to_scrape = [
         "https://www.caisansepolcro.it/prossima-escursione/",
+        "https://www.caisansepolcro.it/prossima-serata/",
         "https://www.caisansepolcro.it/prossime-escursioni-con-prenotazione/"
     ]
     
-    pdf_events = []
+    # Estensioni da cercare
+    EXT_PDF = ('.pdf',)
+    EXT_IMG = ('.jpg', '.jpeg', '.png', '.webp')
+    VALID_EXTS = EXT_PDF + EXT_IMG
+
+    media_events = []
     seen_urls = set()
     
     for url in urls_to_scrape:
-        print(f"Scraping extra: {url}...")
+        print(f"Scraping media da: {url}...")
         
         try:
             headers = {'User-Agent': 'Mozilla/5.0 (compatible; CAI-Aggregator/1.0)'}
             response = requests.get(url, headers=headers, timeout=15)
             soup = BeautifulSoup(response.text, 'html.parser')
             
+            # Cerca tutti i link
             for link in soup.find_all('a'):
                 href = link.get('href')
                 
-                # Cerca solo i PDF
-                if href and href.lower().endswith('.pdf'):
+                # Controllo validità link ed estensione
+                if href and href.lower().endswith(VALID_EXTS):
                     if not href.startswith('http'):
                         href = "https://www.caisansepolcro.it" + href.lstrip('/')
                     
                     if href in seen_urls: continue
                     
+                    # Determina tipo file per icona e etichetta
+                    if href.lower().endswith(EXT_PDF):
+                        icon = "📄"
+                        type_label = "[PDF]"
+                    else:
+                        icon = "🖼️"
+                        type_label = "[IMG]"
+
+                    # Tenta di recuperare un titolo
                     title_text = link.get_text(strip=True)
-                    ignore_words = ['download', 'scarica', 'pdf', 'clicca qui', 'leggi', 'programma']
+                    
+                    # Se il link non ha testo (es. è un'immagine cliccabile), cerca l'ALT text dell'immagine interna
+                    if not title_text:
+                        img_tag = link.find('img')
+                        if img_tag and img_tag.get('alt'):
+                            title_text = img_tag.get('alt')
+
+                    ignore_words = ['download', 'scarica', 'pdf', 'clicca qui', 'leggi', 'programma', 'locandina', 'full resolution']
                     
                     if not title_text or title_text.lower() in ignore_words:
                         if link.get('title'): title_text = link.get('title')
                         else: pass 
 
                     if not title_text or title_text.lower() in ignore_words:
-                        title_text = "Programma Escursione (PDF)"
+                        title_text = f"Locandina/Programma {type_label}"
 
                     seen_urls.add(href)
 
+                    # Cerca data modifica file
                     try:
                         head_req = requests.head(href, headers=headers, timeout=5)
                         last_mod = head_req.headers.get('Last-Modified')
@@ -95,23 +118,25 @@ def get_sansepolcro_pdfs():
                     except:
                         dt_obj = datetime.now()
                     
+                    full_title = f"{icon} {type_label} {title_text}"
+
                     # NOTIFICA TELEGRAM
                     if is_recent(dt_obj):
                         print(f"--> Notifica inviata per: {title_text}")
-                        send_telegram_alert(f"📄 [PDF] {title_text}", href, "CAI Sansepolcro")
+                        send_telegram_alert(full_title, href, "CAI Sansepolcro")
 
-                    pdf_events.append({
-                        "title": f"📄 [PDF] {title_text}",
+                    media_events.append({
+                        "title": full_title,
                         "link": href,
                         "date": dt_obj,
-                        "summary": "Documento scaricabile dalla sezione Escursioni Sansepolcro.",
+                        "summary": f"Media ({type_label}) scaricabile dalla sezione Escursioni Sansepolcro. Clicca per visualizzare.",
                         "source": "CAI Sansepolcro",
                         "color": "#3498db"
                     })
         except Exception as e:
             print(f"Errore scraping su {url}: {e}")
             
-    return pdf_events
+    return media_events
 
 # --- CONFIGURAZIONE GRUPPI (AGGIORNATA) ---
 GROUPS = {
@@ -121,7 +146,7 @@ GROUPS = {
             {"url": "https://www.caiarezzo.it/feed/", "name": "CAI Arezzo", "color": "#e74c3c"},
             {"url": "https://caivaldarnosuperiore.it/feed/", "name": "CAI Valdarno Sup.", "color": "#2ecc71"},
             {"url": "https://caistia.it/feed/", "name": "CAI Stia", "color": "#f1c40f"},
-            {"url": "https://www.caisansepolcro.it/prossima-serata/feed/", "name": "CAI Sansepolcro", "color": "#3498db"}
+            {"url": "https://www.caisansepolcro.it/feed/", "name": "CAI Sansepolcro", "color": "#3498db"}
         ]
     },
     "costa.html": {
