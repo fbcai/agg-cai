@@ -250,4 +250,4 @@ for filename, group_data in GROUPS.items():
 # Totale
 print(f"\n--- Generazione Pagina Generale ---")
 GLOBAL_EVENTS.sort(key=lambda x: x["date"], reverse=True)
-write_html_
+write_html_file("tutto.html", "Tutti gli Eventi CAI (Aggregati)", GLOBAL_EVENTS)
