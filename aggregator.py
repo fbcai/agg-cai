@@ -49,19 +49,16 @@ def get_sansepolcro_pdfs():
                 # Se il titolo è solo "Download" o "PDF", prova a cercare il titolo altrove o salta
                 ignore_words = ['download', 'scarica', 'pdf', 'clicca qui', 'leggi']
                 if not title_text or title_text.lower() in ignore_words:
-                    # Se il link ha un titolo generico, proviamo a vedere se ha un attributo 'title'
                     if link.get('title'):
                         title_text = link.get('title')
                     else:
-                        # Se non ha nemmeno un attributo title valido, potremmo volerlo saltare
-                        # O lasciarlo generico. Per ora continuiamo ma segniamo l'URL come visto.
                         pass 
 
                 # Se dopo i controlli il titolo è ancora troppo generico o vuoto, diamogli un nome standard
                 if not title_text or title_text.lower() in ignore_words:
                     title_text = "Programma Escursione (PDF)"
 
-                # Aggiungiamo l'URL ai visti così non lo ripeschiamo al prossimo giro del loop
+                # Aggiungiamo l'URL ai visti così non lo ripeschiamo
                 seen_urls.add(href)
 
                 # Cerca data modifica file
@@ -173,6 +170,9 @@ def generate_page(filename, group_data):
     # 4. GENERA HTML
     nav_html = get_nav_html(filename)
     
+    # ATTENZIONE: Qui sotto c'è un blocco di codice molto lungo.
+    # Assicurati di copiare TUTTO fino alla fine del file.
+    
     html = f"""
     <!DOCTYPE html>
     <html lang="it">
@@ -190,4 +190,50 @@ def generate_page(filename, group_data):
             .card {{ background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); border-left: 6px solid #ccc; transition: transform 0.2s; }}
             .card:hover {{ transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }}
             .badge {{ display: inline-block; padding: 4px 12px; border-radius: 9999px; color: white; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }}
-            .date {{ float: right; color: #6b7280; font-size: 0.875
+            .date {{ float: right; color: #6b7280; font-size: 0.875rem; }}
+            h2 {{ margin-top: 12px; margin-bottom: 8px; font-size: 1.25rem; }}
+            h2 a {{ text-decoration: none; color: #111827; }}
+            h2 a:hover {{ color: #2563eb; }}
+            .desc {{ color: #4b5563; line-height: 1.5; font-size: 0.95rem; margin-bottom: 16px; }}
+            .read-more {{ display: inline-block; color: #2563eb; font-weight: 600; text-decoration: none; }}
+            .read-more:hover {{ text-decoration: underline; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            {nav_html}
+            <header>
+                <h1>{group_data['title']}</h1>
+                <div class="meta">Aggiornato: {datetime.now().strftime('%d/%m/%Y alle %H:%M')}</div>
+            </header>
+    """
+
+    for event in events:
+        date_str = event["date"].strftime("%d/%m/%Y")
+        html += f"""
+            <div class="card" style="border-left-color: {event['color']}">
+                <div>
+                    <span class="badge" style="background-color: {event['color']}">{event['source']}</span>
+                    <span class="date">{date_str}</span>
+                </div>
+                <h2><a href="{event['link']}" target="_blank">{event['title']}</a></h2>
+                <div class="desc">{event['summary']}</div>
+                <a href="{event['link']}" class="read-more" target="_blank">Leggi di più &rarr;</a>
+            </div>
+        """
+
+    html += """
+        </div>
+    </body>
+    </html>
+    """
+
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"Generato {filename}")
+
+# --- ESECUZIONE PRINCIPALE ---
+for filename, group_data in GROUPS.items():
+    generate_page(filename, group_data)
+
+       
