@@ -136,9 +136,9 @@ GROUPS = {
         "sites": [
             {"url": "https://www.caipisa.it/feed/", "name": "CAI Pisa", "color": "#e67e22"},
             {"url": "https://www.caivaldarnoinferiore.it/feed/", "name": "CAI Valdarno Inf.", "color": "#1abc9c"},
-            {"url": "https://organizzazione.cai.it/sez-livorno/feed/", "name": "CAI Livorno", "color": "#9b59b6"},
+            {"url": "https://rss.app/feeds/uc1xw6gq3SrNFE33.xml/", "name": "FB CAI Livorno", "color": "#9b59b6"},
             {"url": "https://www.cailucca.it/feed/", "name": "CAI Lucca", "color": "#34495e"},
-            {"url": "https://www.caiviareggio.it/feed/", "name": "CAI Viareggio", "color": "#2980b9"}
+            {"url": "https://rss.app/feeds/1z5cCnFgCEsTaTum.xml", "name": "FB CAI Viareggio", "color": "#3b5998"}
         ]
     }
 }
@@ -149,7 +149,7 @@ def get_nav_html(current_page):
     style_all = 'display: inline-block; text-decoration: none; margin: 5px; padding: 8px 15px; border-radius: 20px; font-weight: bold; border: 2px solid #333;'
     if current_page == "tutto.html": style_all += 'background-color: #333; color: white;'
     else: style_all += 'background-color: white; color: #333;'
-    nav += f'<a href="tutto.html" style="{style_all}">🌍 TUTTI I SITI</a> '
+    nav += f'<a href="tutto.html" style="{style_all}">🌍 TUTTE LE SEZIONI</a> '
 
     for filename, data in GROUPS.items():
         style = 'display: inline-block; text-decoration: none; margin: 5px; padding: 8px 15px; border-radius: 20px; font-weight: bold;'
