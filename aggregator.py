@@ -28,7 +28,7 @@ def clean_html(raw_html):
     return re.sub(cleanr, '', raw_html)
 
 def is_recent(dt_obj):
-    # MODIFICATO: Controllo sulle ultime 9 ore (8 ore ciclo + 1 ora buffer)
+    # Controllo sulle ultime 9 ore
     return (datetime.now() - dt_obj) < timedelta(hours=9)
 
 def get_sansepolcro_media():
@@ -56,6 +56,9 @@ def get_sansepolcro_media():
                     if not href.startswith('http'): href = "https://www.caisansepolcro.it" + href.lstrip('/')
                     if href in seen: continue
                     
+                    # Filtro preventivo anche sui link
+                    if "aquila" in href.lower() or "cropped" in href.lower(): continue
+
                     is_pdf = href.lower().endswith('.pdf')
                     icon = "📄" if is_pdf else "🖼️"
                     type_lbl = "[PDF]" if is_pdf else "[IMG]"
@@ -95,7 +98,11 @@ def get_sansepolcro_media():
                     if not src.startswith('http'): src = "https://www.caisansepolcro.it" + src.lstrip('/')
                     if src in seen: continue
                     
-                    if "logo" in src.lower() or "icon" in src.lower() or "facebook" in src.lower(): continue
+                    # --- FILTRO MIGLIORATO ---
+                    # Esclude loghi, icone social, e l'immagine "aquila/cropped"
+                    bad_keywords = ['logo', 'icon', 'facebook', 'whatsapp', 'instagram', 'aquila', 'cropped']
+                    if any(keyword in src.lower() for keyword in bad_keywords):
+                        continue
 
                     title = img.get('alt')
                     if not title: title = "Locandina (Immagine visualizzata)"
@@ -121,7 +128,7 @@ GROUPS = {
             {"url": "https://www.caiarezzo.it/feed/", "name": "CAI Arezzo", "color": "#e74c3c"},
             {"url": "https://caivaldarnosuperiore.it/feed/", "name": "CAI Valdarno Sup.", "color": "#2ecc71"},
             {"url": "https://caistia.it/feed/", "name": "CAI Stia", "color": "#f1c40f"},
-            {"url": "https://www.caisansepolcro.it/prossima-serata/feed/", "name": "CAI Sansepolcro", "color": "#3498db"}
+            {"url": "https://www.caisansepolcro.it/feed/", "name": "CAI Sansepolcro", "color": "#3498db"}
         ]
     },
     "costa.html": {
@@ -131,9 +138,7 @@ GROUPS = {
             {"url": "https://www.caivaldarnoinferiore.it/feed/", "name": "CAI Valdarno Inf.", "color": "#1abc9c"},
             {"url": "https://organizzazione.cai.it/sez-livorno/feed/", "name": "CAI Livorno", "color": "#9b59b6"},
             {"url": "https://www.cailucca.it/feed/", "name": "CAI Lucca", "color": "#34495e"},
-            {"url": "https://www.caiviareggio.it/feed/", "name": "CAI Viareggio", "color": "#2980b9"},
-            # --- NUOVO: FACEBOOK CAI VIAREGGIO ---
-            {"url": "https://rss.app/feeds/1z5cCnFgCEsTaTum.xml", "name": "FB CAI Viareggio", "color": "#3b5998"}
+            {"url": "https://www.caiviareggio.it/feed/", "name": "CAI Viareggio", "color": "#2980b9"}
         ]
     }
 }
