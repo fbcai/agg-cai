@@ -1,12 +1,72 @@
 import feedparser
+import requests
+from bs4 import BeautifulSoup
 from datetime import datetime
 import time
-import re  # <--- NUOVA IMPORTAZIONE PER PULIRE L'HTML
+import re
+from email.utils import parsedate_to_datetime
+
+# --- FUNZIONI DI SUPPORTO ---
+
+def clean_html(raw_html):
+    """Rimuove i tag HTML per pulire il riassunto."""
+    cleanr = re.compile('<.*?>')
+    cleantext = re.sub(cleanr, '', raw_html)
+    return cleantext
+
+def get_sansepolcro_pdfs():
+    """Scarica i PDF dalla pagina specifica di CAI Sansepolcro."""
+    url = "https://www.caisansepolcro.it/prossima-escursione/"
+    pdf_events = []
+    print(f"Scraping extra: {url}...")
+    
+    try:
+        # Scarica la pagina simulando un browser
+        headers = {'User-Agent': 'Mozilla/5.0 (compatible; CAI-Aggregator/1.0)'}
+        response = requests.get(url, headers=headers, timeout=15)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Cerca tutti i link
+        for link in soup.find_all('a'):
+            href = link.get('href')
+            if href and href.lower().endswith('.pdf'):
+                # Corregge link relativi se necessario
+                if not href.startswith('http'):
+                    href = "https://www.caisansepolcro.it" + href
+                
+                title_text = link.get_text(strip=True)
+                if not title_text:
+                    title_text = "Scarica Programma/Locandina (PDF)"
+                
+                # Cerca di ottenere la data reale del file dal server
+                try:
+                    head_req = requests.head(href, headers=headers, timeout=5)
+                    last_mod = head_req.headers.get('Last-Modified')
+                    if last_mod:
+                        # Converte la data del server in oggetto data
+                        dt_obj = parsedate_to_datetime(last_mod).replace(tzinfo=None)
+                    else:
+                        dt_obj = datetime.now()
+                except:
+                    dt_obj = datetime.now()
+
+                pdf_events.append({
+                    "title": f"📄 [PDF] {title_text}",
+                    "link": href,
+                    "date": dt_obj,
+                    "summary": "Documento scaricabile dalla sezione 'Prossima Escursione'. Clicca sul titolo per aprire il PDF.",
+                    "source": "CAI Sansepolcro",
+                    "color": "#3498db" # Stesso colore della sezione
+                })
+    except Exception as e:
+        print(f"Errore scraping Sansepolcro: {e}")
+        
+    return pdf_events
 
 # --- CONFIGURAZIONE GRUPPI ---
 GROUPS = {
     "index.html": {
-        "title": "Toscana Est (Arezzo, Sansepolcro, Stia, Valdarno)",
+        "title": "Toscana Est (Arezzo, Sansepolcro, Stia-Casentino, Valdarno)",
         "sites": [
             {"url": "https://www.caiarezzo.it/feed/", "name": "CAI Arezzo", "color": "#e74c3c"},
             {"url": "https://www.caisansepolcro.it/feed/", "name": "CAI Sansepolcro", "color": "#3498db"},
@@ -26,12 +86,6 @@ GROUPS = {
     }
 }
 
-# Funzione per pulire l'HTML (RIMUOVE TUTTI I TAG)
-def clean_html(raw_html):
-    cleanr = re.compile('<.*?>')
-    cleantext = re.sub(cleanr, '', raw_html)
-    return cleantext
-
 def get_nav_html(current_page):
     nav = '<nav style="margin-bottom: 30px; text-align: center;">'
     for filename, data in GROUPS.items():
@@ -48,12 +102,13 @@ def generate_page(filename, group_data):
     print(f"--- Elaborazione gruppo: {group_data['title']} ---")
     events = []
     
+    # 1. SCARICA DAI FEED RSS
     for site in group_data["sites"]:
         print(f"Scaricando {site['name']}...")
         try:
             feed = feedparser.parse(site['url'])
-            # Controllo se il feed è valido
             if not feed.entries:
+                # Fallback: a volte server bloccano user-agent vuoti, riproviamo se vuoto? No, feedparser è robusto solitamente.
                 print(f"  ! Nessun articolo o feed non valido per {site['url']}")
                 continue
 
@@ -66,12 +121,8 @@ def generate_page(filename, group_data):
                 else:
                     dt_obj = datetime.now()
 
-                # --- PULIZIA AVANZATA ---
                 summary = entry.get("summary", "")
-                # Rimuove tutti i tag HTML per evitare che rompano il layout
                 summary_clean = clean_html(summary)
-                
-                # Taglia il testo se troppo lungo
                 if len(summary_clean) > 250:
                     summary_clean = summary_clean[:250] + "..."
 
@@ -86,10 +137,17 @@ def generate_page(filename, group_data):
         except Exception as e:
             print(f"Errore su {site['name']}: {e}")
 
-    # Ordina eventi
+    # 2. CONTROLLO SPECIALE PER SANSEPOLCRO (SOLO NELLA PAGINA INDEX)
+    if filename == "index.html":
+        sansepolcro_pdfs = get_sansepolcro_pdfs()
+        if sansepolcro_pdfs:
+            print(f"  > Aggiunti {len(sansepolcro_pdfs)} PDF da Sansepolcro")
+            events.extend(sansepolcro_pdfs)
+
+    # 3. ORDINA TUTTO PER DATA
     events.sort(key=lambda x: x["date"], reverse=True)
 
-    # Crea HTML
+    # 4. GENERA HTML
     nav_html = get_nav_html(filename)
     
     html = f"""
@@ -137,7 +195,7 @@ def generate_page(filename, group_data):
                 </div>
                 <h2><a href="{event['link']}" target="_blank">{event['title']}</a></h2>
                 <div class="desc">{event['summary']}</div>
-                <a href="{event['link']}" class="read-more" target="_blank">Leggi sul sito &rarr;</a>
+                <a href="{event['link']}" class="read-more" target="_blank">Apri documento &rarr;</a>
             </div>
         """
 
