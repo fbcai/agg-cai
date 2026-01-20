@@ -131,7 +131,9 @@ GROUPS = {
             {"url": "https://www.caivaldarnoinferiore.it/feed/", "name": "CAI Valdarno Inf.", "color": "#1abc9c"},
             {"url": "https://organizzazione.cai.it/sez-livorno/feed/", "name": "CAI Livorno", "color": "#9b59b6"},
             {"url": "https://www.cailucca.it/feed/", "name": "CAI Lucca", "color": "#34495e"},
-            {"url": "https://www.caiviareggio.it/feed/", "name": "CAI Viareggio", "color": "#2980b9"}
+            {"url": "https://www.caiviareggio.it/feed/", "name": "CAI Viareggio", "color": "#2980b9"},
+            # --- NUOVO: FACEBOOK CAI VIAREGGIO ---
+            {"url": "https://rss.app/feeds/1z5cCnFgCEsTaTum.xml", "name": "FB CAI Viareggio", "color": "#3b5998"}
         ]
     }
 }
