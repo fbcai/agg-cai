@@ -91,9 +91,9 @@ GROUPS = {
         "title": "Toscana Est (Arezzo, Sansepolcro, Stia-Casentino, Valdarno Superiore)",
         "sites": [
             {"url": "https://www.caiarezzo.it/feed/", "name": "CAI Arezzo", "color": "#e74c3c"},
-            {"url": "https://www.caisansepolcro.it/feed/", "name": "CAI Sansepolcro", "color": "#3498db"},
             {"url": "https://caivaldarnosuperiore.it/feed/", "name": "CAI Valdarno Sup.", "color": "#2ecc71"},
-            {"url": "https://caistia.it/feed/", "name": "CAI Stia", "color": "#f1c40f"}
+            {"url": "https://caistia.it/feed/", "name": "CAI Stia", "color": "#f1c40f"},
+            {"url": "https://www.caisansepolcro.it/feed/", "name": "CAI Sansepolcro", "color": "#3498db"},
         ]
     },
     "costa.html": {
