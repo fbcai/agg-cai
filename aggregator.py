@@ -54,7 +54,7 @@ def get_sansepolcro_media():
 
 def get_grosseto_media():
     urls = ["https://caigrosseto.it/prossimi-eventi/"]
-    return scrape_generic_media(urls, "CAI Grosseto", "https://caigrosseto.it", color="#34495e")
+    return scrape_generic_media(urls, "CAI Grosseto", "https://caigrosseto.it", color="#16a085")
 
 def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
     EXTS = ('.pdf', '.jpg', '.jpeg', '.png', '.webp')
@@ -133,7 +133,7 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
 # --- CONFIGURAZIONE GRUPPI (AGGIORNATA) ---
 GROUPS = {
     "index.html": {
-        "title": "Toscana Est (Arezzo, Sansepolcro, Siena, Stia, Valdarno Sup.)",
+        "title": "Toscana Sudest (Arezzo, Siena, Sansepolcro, Stia, Valdarno Sup.)",
         "sites": [
             {"url": "https://www.caiarezzo.it/feed/", "name": "CAI Arezzo", "color": "#e74c3c"},
             {"url": "https://caivaldarnosuperiore.it/feed/", "name": "CAI Valdarno Sup.", "color": "#2ecc71"},
@@ -143,16 +143,16 @@ GROUPS = {
         ]
     },
     "costa.html": {
-        "title": "Toscana Ovest (Pisa, Livorno, Grosseto, Viareggio, Pietrasanta, Forte dei Marmi, Massa, Carrara)",
+        "title": "Toscana Ovest (Pisa, Livorno, Grosseto, Pontedera, Viareggio, Pietrasanta, Forte dei Marmi, Massa, Carrara)",
         "sites": [
             {"url": "https://www.caipisa.it/feed/", "name": "CAI Pisa", "color": "#e67e22"},
             {"url": "https://organizzazione.cai.it/sez-livorno/feed/", "name": "CAI Livorno", "color": "#9b59b6"},
             {"url": "https://rss.app/feeds/uc1xw6gq3SrNFE33.xml/", "name": "FB CAI Livorno", "color": "#9b59b6"},
             {"url": "https://rss.app/feeds/1z5cCnFgCEsTaTum.xml", "name": "FB CAI Viareggio", "color": "#3b5998"},
-            {"url": "https://rss.app/feeds/SA5s3stQwPLRLfRu.xml", "name": "CAI Forte d. Marmi", "color": "#3498db"},
+            {"url": "https://rss.app/feeds/SA5s3stQwPLRLfRu.xml", "name": "FB CAI Forte d. Marmi", "color": "#3498db"},
             {"url": "https://www.caicarrara.it/feed/", "name": "CAI Carrara", "color": "#7f8c8d"},
-            {"url": "https://www.caigrosseto.it/feed/", "name": "CAI Grosseto", "color": "#34495e"},
-            {"url": "https://rss.app/feeds/4IiuRykrqytZe7u7.xml", "name": "CAI Pietrasanta", "color": "#d35400"},
+            {"url": "https://www.caigrosseto.it/feed/", "name": "CAI Grosseto", "color": "#16a085"},
+            {"url": "https://rss.app/feeds/4IiuRykrqytZe7u7.xml", "name": "FB CAI Pietrasanta", "color": "#d35400"},
             {"url": "https://www.caimassa.it/feed/", "name": "CAI Massa", "color": "#2c3e50"}
         ]
     },
@@ -160,12 +160,12 @@ GROUPS = {
         "title": "Toscana Nord (Pistoia, Luccca, Barga, Castelnuovo G., Maresca, Pescia, Pontremoli)",
         "sites": [
             {"url": "https://www.caipistoia.org/feed/", "name": "CAI Pistoia", "color": "#8e44ad"},
-            {"url": "https://www.cailucca.it/feed/", "name": "CAI Lucca", "color": "#34495e"},
+            {"url": "https://www.cailucca.it/feed/", "name": "CAI Lucca", "color": "#16a085"},
             {"url": "https://rss.app/feeds/HHym29cwmKAXESDM.xml/", "name": "CAI Pontremoli", "color": "#9b59b6"}            
          ]
     },
     "firenze.html": {
-        "title": "Area Fiorentina (Firenze, Sesto, Scandicci)",
+        "title": "Area Fiorentina (Firenze, Prato, Agliana, Sesto, Scandicci, Pontassieve, Valdarno Inf.)",
         "sites": [
             {"url": "https://www.caifirenze.it/feed/", "name": "CAI Firenze", "color": "#c0392b"},
             {"url": "https://www.caisesto.it/feed/", "name": "CAI Sesto F.", "color": "#2980b9"},
