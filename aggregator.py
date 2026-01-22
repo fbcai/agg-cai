@@ -28,35 +28,51 @@ def clean_html(raw_html):
     return re.sub(cleanr, '', raw_html)
 
 def is_recent(dt_obj):
-    # Controllo sulle ultime 9 ore
     return (datetime.now() - dt_obj) < timedelta(hours=9)
 
+def clean_filename(url):
+    """Estrae un titolo leggibile dal nome del file nell'URL."""
+    try:
+        filename = url.split('/')[-1]
+        name = filename.rsplit('.', 1)[0]
+        name = name.replace('cropped-', '').replace('scaled-', '')
+        name = name.replace('-', ' ').replace('_', ' ')
+        name = re.sub(r'\s\d+x\d+$', '', name) 
+        return name.title()
+    except:
+        return ""
+
+# --- SCRAPER SPECIFICI ---
+
 def get_sansepolcro_media():
-    """Scarica PDF e IMMAGINI (sia linkate che visualizzate) da Sansepolcro."""
     urls = [
         "https://www.caisansepolcro.it/prossima-escursione/",
         "https://www.caisansepolcro.it/prossime-escursioni-con-prenotazione/",
         "https://www.caisansepolcro.it/prossima-serata/"
     ]
+    return scrape_generic_media(urls, "CAI Sansepolcro", "https://www.caisansepolcro.it")
+
+def get_grosseto_media():
+    urls = ["https://caigrosseto.it/prossimi-eventi/"]
+    return scrape_generic_media(urls, "CAI Grosseto", "https://caigrosseto.it", color="#e67e22")
+
+def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
     EXTS = ('.pdf', '.jpg', '.jpeg', '.png', '.webp')
     media_events = []
     seen = set()
     
     for url in urls:
-        print(f"Scraping media: {url}...")
+        print(f"Scraping media da {source_name}: {url}...")
         try:
             headers = {'User-Agent': 'Mozilla/5.0 (compatible; CAI-Aggregator/1.0)'}
             resp = requests.get(url, headers=headers, timeout=15)
             soup = BeautifulSoup(resp.text, 'html.parser')
             
-            # 1. CERCA NEI LINK
             for link in soup.find_all('a'):
                 href = link.get('href')
                 if href and href.lower().endswith(EXTS):
-                    if not href.startswith('http'): href = "https://www.caisansepolcro.it" + href.lstrip('/')
+                    if not href.startswith('http'): href = base_domain + href.lstrip('/')
                     if href in seen: continue
-                    
-                    # Filtro preventivo anche sui link
                     if "aquila" in href.lower() or "cropped" in href.lower(): continue
 
                     is_pdf = href.lower().endswith('.pdf')
@@ -68,14 +84,11 @@ def get_sansepolcro_media():
                         img = link.find('img')
                         if img and img.get('alt'): title = img.get('alt')
                     
-                    bad_words = ['download', 'scarica', 'pdf', 'clicca', 'leggi', 'programma', 'locandina']
-                    if not title or title.lower() in bad_words:
-                        if link.get('title'): title = link.get('title')
-                    if not title or title.lower() in bad_words:
-                        title = f"Locandina/Programma {type_lbl}"
+                    bad_words = ['download', 'scarica', 'pdf', 'clicca', 'leggi', 'programma', 'locandina', 'volantino']
+                    if not title or title.lower() in bad_words: title = clean_filename(href)
+                    if not title: title = f"Documento {type_lbl}"
                     
                     seen.add(href)
-                    
                     try:
                         head = requests.head(href, headers=headers, timeout=5)
                         lmod = head.headers.get('Last-Modified')
@@ -83,29 +96,26 @@ def get_sansepolcro_media():
                     except: dt = datetime.now()
                     
                     full_title = f"{icon} {type_lbl} {title}"
-                    if is_recent(dt): send_telegram_alert(full_title, href, "CAI Sansepolcro")
+                    if is_recent(dt): send_telegram_alert(full_title, href, source_name)
                     
                     media_events.append({
                         "title": full_title, "link": href, "date": dt,
-                        "summary": f"Media ({type_lbl}) scaricabile. Clicca per aprire.",
-                        "source": "CAI Sansepolcro", "color": "#3498db"
+                        "summary": f"Media ({type_lbl}) rilevato su {source_name}.",
+                        "source": source_name, "color": color
                     })
 
-            # 2. CERCA NELLE IMMAGINI VISUALIZZATE
             for img in soup.find_all('img'):
                 src = img.get('src')
                 if src and src.lower().endswith(EXTS):
-                    if not src.startswith('http'): src = "https://www.caisansepolcro.it" + src.lstrip('/')
+                    if not src.startswith('http'): src = base_domain + src.lstrip('/')
                     if src in seen: continue
                     
-                    # --- FILTRO MIGLIORATO ---
-                    # Esclude loghi, icone social, e l'immagine "aquila/cropped"
-                    bad_keywords = ['logo', 'icon', 'facebook', 'whatsapp', 'instagram', 'aquila', 'cropped']
-                    if any(keyword in src.lower() for keyword in bad_keywords):
-                        continue
+                    bad_keywords = ['logo', 'icon', 'facebook', 'whatsapp', 'instagram', 'aquila', 'cropped', 'retina']
+                    if any(keyword in src.lower() for keyword in bad_keywords): continue
 
                     title = img.get('alt')
-                    if not title: title = "Locandina (Immagine visualizzata)"
+                    if not title: title = clean_filename(src)
+                    if not title: title = "Locandina"
                     
                     seen.add(src)
                     dt = datetime.now()
@@ -113,17 +123,17 @@ def get_sansepolcro_media():
                     
                     media_events.append({
                         "title": full_title, "link": src, "date": dt,
-                        "summary": "Immagine rilevata nella pagina. Clicca per ingrandire.",
-                        "source": "CAI Sansepolcro", "color": "#3498db"
+                        "summary": "Immagine rilevata nella pagina.",
+                        "source": source_name, "color": color
                     })
 
         except Exception as e: print(f"Err scraping {url}: {e}")
     return media_events
 
-# --- CONFIGURAZIONE GRUPPI ---
+# --- CONFIGURAZIONE GRUPPI (AGGIORNATA) ---
 GROUPS = {
     "index.html": {
-        "title": "Toscana Est (Arezzo, Sansepolcro, Siena, Stia-Casentino, Valdarno Superiore)",
+        "title": "Toscana Est (Arezzo, Sansepolcro, Siena, Stia, Valdarno Sup.)",
         "sites": [
             {"url": "https://www.caiarezzo.it/feed/", "name": "CAI Arezzo", "color": "#e74c3c"},
             {"url": "https://caivaldarnosuperiore.it/feed/", "name": "CAI Valdarno Sup.", "color": "#2ecc71"},
@@ -133,14 +143,35 @@ GROUPS = {
         ]
     },
     "costa.html": {
-        "title": "Toscana Ovest (Pisa, Livorno, Lucca, Valdarno Inferiore, Viareggio)",
+        "title": "Toscana Ovest (Pisa, Livorno, Grosseto, Viareggio, Pietrasanta, Forte dei Marmi, Massa, Carrara)",
         "sites": [
             {"url": "https://www.caipisa.it/feed/", "name": "CAI Pisa", "color": "#e67e22"},
-            {"url": "https://www.caivaldarnoinferiore.it/feed/", "name": "CAI Valdarno Inf.", "color": "#1abc9c"},
             {"url": "https://organizzazione.cai.it/sez-livorno/feed/", "name": "CAI Livorno", "color": "#9b59b6"},
             {"url": "https://rss.app/feeds/uc1xw6gq3SrNFE33.xml/", "name": "FB CAI Livorno", "color": "#9b59b6"},
+            {"url": "https://rss.app/feeds/1z5cCnFgCEsTaTum.xml", "name": "FB CAI Viareggio", "color": "#3b5998"},
+            {"url": "https://www.caicarrara.it/feed/", "name": "CAI Carrara", "color": "#7f8c8d"},
+            {"url": "https://www.caigrosseto.it/feed/", "name": "CAI Grosseto", "color": "#34495e"},
+            {"url": "https://rss.app/feeds/4IiuRykrqytZe7u7.xml", "name": "CAI Pietrasanta", "color": "#d35400"},
+            {"url": "https://www.caimassa.it/feed/", "name": "CAI Massa", "color": "#2c3e50"}
+        ]
+    },
+    "nord.html": {
+        "title": "Toscana Nord (Pistoia, Luccca, Barga, Castelnuovo G., Maresca, Pescia, Pontremoli)",
+        "sites": [
+            {"url": "https://www.caipistoia.org/feed/", "name": "CAI Pistoia", "color": "#8e44ad"},
             {"url": "https://www.cailucca.it/feed/", "name": "CAI Lucca", "color": "#34495e"},
-            {"url": "https://rss.app/feeds/1z5cCnFgCEsTaTum.xml", "name": "FB CAI Viareggio", "color": "#3b5998"}
+            {"url": "https://rss.app/feeds/HHym29cwmKAXESDM.xml/", "name": "CAI Pontremoli", "color": "#9b59b6"}            
+         ]
+    },
+    "firenze.html": {
+        "title": "Area Fiorentina (Firenze, Sesto, Scandicci)",
+        "sites": [
+            {"url": "https://www.caifirenze.it/feed/", "name": "CAI Firenze", "color": "#c0392b"},
+            {"url": "https://www.caisesto.it/feed/", "name": "CAI Sesto F.", "color": "#2980b9"},
+            {"url": "https://www.caipontassieve.it/feed/", "name": "CAI Pontassieve", "color": "#3b5998"},
+            {"url": "https://www.caiprato.it/feed/", "name": "CAI Prato", "color": "#d35400"},
+            {"url": "https://www.caivaldarnoinferiore.it/feed/", "name": "CAI Valdarno Inf.", "color": "#1abc9c"},
+            {"url": "https://www.caiscandicci.it/feed/", "name": "CAI Scandicci", "color": "#16a085"}
         ]
     }
 }
@@ -245,11 +276,16 @@ for filename, group_data in GROUPS.items():
                 current_group_events.append(ev)
         except Exception as e: print(f"Errore {site['name']}: {e}")
 
-    # B. Scraping Sansepolcro
+    # B. SCRAPING SPECIFICI (Immagini/PDF)
     site_names_in_group = [s['name'] for s in group_data['sites']]
+    
+    # 1. Sansepolcro
     if "CAI Sansepolcro" in site_names_in_group:
-        extra_events = get_sansepolcro_media()
-        current_group_events.extend(extra_events)
+        current_group_events.extend(get_sansepolcro_media())
+
+    # 2. Grosseto
+    if "CAI Grosseto" in site_names_in_group:
+        current_group_events.extend(get_grosseto_media())
 
     # C. Salva Gruppo
     current_group_events.sort(key=lambda x: x["date"], reverse=True)
