@@ -133,7 +133,7 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
 # --- CONFIGURAZIONE GRUPPI (AGGIORNATA) ---
 GROUPS = {
     "index.html": {
-        "title": "Toscana Sudest (Arezzo, Siena, Sansepolcro, Stia, Valdarno Sup.)",
+        "title": "Toscana Sudest (Arezzo, Siena, Sansepolcro, Stia-Casentino, Valdarno Sup.)",
         "sites": [
             {"url": "https://www.caiarezzo.it/feed/", "name": "CAI Arezzo", "color": "#e74c3c"},
             {"url": "https://caivaldarnosuperiore.it/feed/", "name": "CAI Valdarno Sup.", "color": "#2ecc71"},
@@ -165,7 +165,7 @@ GROUPS = {
          ]
     },
     "firenze.html": {
-        "title": "Area Fiorentina (Firenze, Prato, Agliana, Sesto, Scandicci, Pontassieve, Valdarno Inf.)",
+        "title": "Area Fiorentina (Firenze, Prato, Agliana, Sesto F., Scandicci, Pontassieve, Valdarno Inf.)",
         "sites": [
             {"url": "https://www.caifirenze.it/feed/", "name": "CAI Firenze", "color": "#c0392b"},
             {"url": "https://www.caisesto.it/feed/", "name": "CAI Sesto F.", "color": "#2980b9"},
