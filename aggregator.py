@@ -110,7 +110,7 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
                     if not src.startswith('http'): src = base_domain + src.lstrip('/')
                     if src in seen: continue
                     
-                    bad_keywords = ['logo', 'icon', 'facebook', 'whatsapp', 'instagram', 'aquila', 'cropped', 'retina']
+                    bad_keywords = ['logo', 'icon', 'caiweb', 'stemma', 'facebook', 'whatsapp', 'instagram', 'aquila', 'cropped', 'retina']
                     if any(keyword in src.lower() for keyword in bad_keywords): continue
 
                     title = img.get('alt')
