@@ -149,6 +149,7 @@ GROUPS = {
             {"url": "https://organizzazione.cai.it/sez-livorno/feed/", "name": "CAI Livorno", "color": "#9b59b6"},
             {"url": "https://rss.app/feeds/uc1xw6gq3SrNFE33.xml/", "name": "FB CAI Livorno", "color": "#9b59b6"},
             {"url": "https://rss.app/feeds/1z5cCnFgCEsTaTum.xml", "name": "FB CAI Viareggio", "color": "#3b5998"},
+            {"url": "https://rss.app/feeds/SA5s3stQwPLRLfRu.xml", "name": "CAI Forte d. Marmi", "color": "#3498db"},
             {"url": "https://www.caicarrara.it/feed/", "name": "CAI Carrara", "color": "#7f8c8d"},
             {"url": "https://www.caigrosseto.it/feed/", "name": "CAI Grosseto", "color": "#34495e"},
             {"url": "https://rss.app/feeds/4IiuRykrqytZe7u7.xml", "name": "CAI Pietrasanta", "color": "#d35400"},
