@@ -150,6 +150,7 @@ GROUPS = {
             {"url": "https://rss.app/feeds/uc1xw6gq3SrNFE33.xml/", "name": "FB CAI Livorno", "color": "#9b59b6"},
             {"url": "https://rss.app/feeds/1z5cCnFgCEsTaTum.xml", "name": "FB CAI Viareggio", "color": "#3b5998"},
             {"url": "https://rss.app/feeds/SA5s3stQwPLRLfRu.xml", "name": "FB CAI Forte d. Marmi", "color": "#3498db"},
+            {"url": "https://www.caipontedera.it/feed/", "name": "CAI Carrara", "color": "#1abc9c"},
             {"url": "https://www.caicarrara.it/feed/", "name": "CAI Carrara", "color": "#7f8c8d"},
             {"url": "https://www.caigrosseto.it/feed/", "name": "CAI Grosseto", "color": "#16a085"},
             {"url": "https://rss.app/feeds/4IiuRykrqytZe7u7.xml", "name": "FB CAI Pietrasanta", "color": "#d35400"},
@@ -157,7 +158,7 @@ GROUPS = {
         ]
     },
     "nord.html": {
-        "title": "Toscana Nord (Pistoia, Luccca, Barga, Castelnuovo G., Maresca, Pescia, Pontremoli)",
+        "title": "Toscana Nord (Pistoia, Luccca, Barga, Castelnuovo G., Maresca, Pescia, Fivizzano, Pontremoli)",
         "sites": [
             {"url": "https://www.caipistoia.org/feed/", "name": "CAI Pistoia", "color": "#8e44ad"},
             {"url": "https://www.cailucca.it/feed/", "name": "CAI Lucca", "color": "#16a085"},
