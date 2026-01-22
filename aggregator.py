@@ -54,7 +54,7 @@ def get_sansepolcro_media():
 
 def get_grosseto_media():
     urls = ["https://caigrosseto.it/prossimi-eventi/"]
-    return scrape_generic_media(urls, "CAI Grosseto", "https://caigrosseto.it", color="#e67e22")
+    return scrape_generic_media(urls, "CAI Grosseto", "https://caigrosseto.it", color="#34495e")
 
 def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
     EXTS = ('.pdf', '.jpg', '.jpeg', '.png', '.webp')
