@@ -151,7 +151,7 @@ GROUPS = {
             #{"url": "https://rss.app/feeds/1z5cCnFgCEsTaTum.xml", "name": "FB CAI Viareggio", "color": "#3b5998"},
             {"url": "https://caiviareggio.it/feed/", "name": "CAI Viareggio", "color": "#3b5998"},
             #{"url": "https://rss.app/feeds/SA5s3stQwPLRLfRu.xml", "name": "FB CAI Forte d. Marmi", "color": "#3498db"},
-            {"url": "https://www.caifortedeimarmi.it/feed/, "name": "CAI Forte d. Marmi", "color": "#3498db"}, 
+            {"url": "https://www.caifortedeimarmi.it/feed/", "name": "CAI Forte d. Marmi", "color": "#3498db"}, 
             {"url": "https://www.caipontedera.it/feed/", "name": "CAI Pontedera", "color": "#1abc9c"},
             {"url": "https://www.caicarrara.it/feed/", "name": "CAI Carrara", "color": "#7f8c8d"},
             {"url": "https://www.caigrosseto.it/feed/", "name": "CAI Grosseto", "color": "#16a085"},
