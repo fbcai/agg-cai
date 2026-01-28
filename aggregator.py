@@ -28,6 +28,7 @@ def clean_html(raw_html):
     return re.sub(cleanr, '', raw_html)
 
 def is_recent(dt_obj):
+    # Controllo sulle ultime 9 ore
     return (datetime.now() - dt_obj) < timedelta(hours=9)
 
 def clean_filename(url):
@@ -41,6 +42,18 @@ def clean_filename(url):
         return name.title()
     except:
         return ""
+
+def extract_date_from_url(url):
+    """Cerca pattern tipo /2024/02/ nell'URL per datare l'immagine."""
+    try:
+        match = re.search(r'/(\d{4})/(\d{2})/', url)
+        if match:
+            year = int(match.group(1))
+            month = int(match.group(2))
+            return datetime(year, month, 1)
+    except:
+        pass
+    return None
 
 # --- SCRAPER SPECIFICI ---
 
@@ -68,6 +81,7 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
             resp = requests.get(url, headers=headers, timeout=15)
             soup = BeautifulSoup(resp.text, 'html.parser')
             
+            # 1. CERCA NEI LINK
             for link in soup.find_all('a'):
                 href = link.get('href')
                 if href and href.lower().endswith(EXTS):
@@ -89,11 +103,17 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
                     if not title: title = f"Documento {type_lbl}"
                     
                     seen.add(href)
+                    
+                    # LOGICA DATAZIONE
+                    dt = None
                     try:
                         head = requests.head(href, headers=headers, timeout=5)
                         lmod = head.headers.get('Last-Modified')
-                        dt = parsedate_to_datetime(lmod).replace(tzinfo=None) if lmod else datetime.now()
-                    except: dt = datetime.now()
+                        if lmod: dt = parsedate_to_datetime(lmod).replace(tzinfo=None)
+                    except: pass
+                    
+                    if not dt: dt = extract_date_from_url(href)
+                    if not dt: dt = datetime(2023, 1, 1) 
                     
                     full_title = f"{icon} {type_lbl} {title}"
                     if is_recent(dt): send_telegram_alert(full_title, href, source_name)
@@ -104,6 +124,7 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
                         "source": source_name, "color": color
                     })
 
+            # 2. CERCA NELLE IMMAGINI VISUALIZZATE
             for img in soup.find_all('img'):
                 src = img.get('src')
                 if src and src.lower().endswith(EXTS):
@@ -118,9 +139,13 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
                     if not title: title = "Locandina"
                     
                     seen.add(src)
-                    dt = datetime.now()
-                    full_title = f"🖼️ [IMG] {title}"
                     
+                    dt = extract_date_from_url(src)
+                    if not dt: dt = datetime(2023, 1, 1)
+
+                    full_title = f"🖼️ [IMG] {title}"
+                    if is_recent(dt): send_telegram_alert(full_title, src, source_name)
+
                     media_events.append({
                         "title": full_title, "link": src, "date": dt,
                         "summary": "Immagine rilevata nella pagina.",
@@ -130,10 +155,10 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
         except Exception as e: print(f"Err scraping {url}: {e}")
     return media_events
 
-# --- CONFIGURAZIONE GRUPPI (AGGIORNATA) ---
+# --- CONFIGURAZIONE GRUPPI ---
 GROUPS = {
     "index.html": {
-        "title": "Toscana Sudest (Arezzo, Siena, Sansepolcro, Stia-Casentino, Valdarno Sup.)",
+        "title": "Toscana Est (Arezzo, Sansepolcro, Siena, Stia, Valdarno Sup.)",
         "sites": [
             {"url": "https://www.caiarezzo.it/feed/", "name": "CAI Arezzo", "color": "#e74c3c"},
             {"url": "https://caivaldarnosuperiore.it/feed/", "name": "CAI Valdarno Sup.", "color": "#2ecc71"},
@@ -143,19 +168,15 @@ GROUPS = {
         ]
     },
     "costa.html": {
-        "title": "Toscana Ovest (Pisa, Livorno, Grosseto, Pontedera, Viareggio, Pietrasanta, Forte dei Marmi, Massa, Carrara)",
+        "title": "Toscana Ovest (Pisa, Livorno, Lucca, Grosseto, Carrara, Massa, Pontedera, Viareggio, Pietrasanta, Forte dei Marmi,)",
         "sites": [
             {"url": "https://www.caipisa.it/feed/", "name": "CAI Pisa", "color": "#e67e22"},
             {"url": "https://organizzazione.cai.it/sez-livorno/feed/", "name": "CAI Livorno", "color": "#9b59b6"},
-            #{"url": "https://rss.app/feeds/uc1xw6gq3SrNFE33.xml/", "name": "FB CAI Livorno", "color": "#9b59b6"},
-            #{"url": "https://rss.app/feeds/1z5cCnFgCEsTaTum.xml", "name": "FB CAI Viareggio", "color": "#3b5998"},
             {"url": "https://caiviareggio.it/feed/", "name": "CAI Viareggio", "color": "#3b5998"},
-            #{"url": "https://rss.app/feeds/SA5s3stQwPLRLfRu.xml", "name": "FB CAI Forte d. Marmi", "color": "#3498db"},
             {"url": "https://www.caifortedeimarmi.it/feed/", "name": "CAI Forte d. Marmi", "color": "#3498db"}, 
             {"url": "https://www.caipontedera.it/feed/", "name": "CAI Pontedera", "color": "#1abc9c"},
             {"url": "https://www.caicarrara.it/feed/", "name": "CAI Carrara", "color": "#7f8c8d"},
             {"url": "https://www.caigrosseto.it/feed/", "name": "CAI Grosseto", "color": "#16a085"},
-            #{"url": "https://rss.app/feeds/4IiuRykrqytZe7u7.xml", "name": "FB CAI Pietrasanta", "color": "#d35400"},
             {"url": "https://www.caipietrasanta.it/feed/", "name": "CAI Pietrasanta", "color": "#d35400"},
             {"url": "https://www.caimassa.it/feed/", "name": "CAI Massa", "color": "#2c3e50"}
         ]
@@ -164,13 +185,13 @@ GROUPS = {
         "title": "Toscana Nord (Pistoia, Luccca, Barga, Castelnuovo G., Maresca, Pescia, Fivizzano, Pontremoli)",
         "sites": [
             {"url": "https://www.caipistoia.org/feed/", "name": "CAI Pistoia", "color": "#8e44ad"},
-            {"url": "https://www.cailucca.it/feed/", "name": "CAI Lucca", "color": "#16a085"},
-            #{"url": "https://rss.app/feeds/HHym29cwmKAXESDM.xml/", "name": "CAI Pontremoli", "color": "#9b59b6"} 
+            {"url": "https://www.cailucca.it/feed/", "name": "CAI Lucca", "color": "#34495e"},
+            {"url": "https://www.caifivizzano.it/feed/", "name": "CAI Fivizzano", "color": "#3b5998"},
             {"url": "https://caipontremoli.it/feed/", "name": "CAI Pontremoli", "color": "#9b59b6"} 
          ]
     },
     "firenze.html": {
-        "title": "Area Fiorentina (Firenze, Prato, Agliana, Sesto F., Scandicci, Pontassieve, Valdarno Inf.)",
+        "title": "Area Fiorentina (Firenze, Prato, Sesto, Scandicci, Pontassieve, Agliana, Valdarno Inf.)",
         "sites": [
             {"url": "https://www.caifirenze.it/feed/", "name": "CAI Firenze", "color": "#c0392b"},
             {"url": "https://www.caisesto.it/feed/", "name": "CAI Sesto F.", "color": "#2980b9"},
