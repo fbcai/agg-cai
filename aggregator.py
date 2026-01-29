@@ -168,10 +168,12 @@ GROUPS = {
         ]
     },
     "costa.html": {
-        "title": "Toscana Ovest (Pisa, Livorno, Lucca, Grosseto, Carrara, Massa, Pontedera, Viareggio, Pietrasanta, Forte dei Marmi,)",
+        "title": "Toscana Ovest (Pisa, Livorno, Lucca, Viareggio, Massa, Carrara, Grosseto, Pietrasanta, Forte dei Marmi, Pontedera)",
         "sites": [
             {"url": "https://www.caipisa.it/feed/", "name": "CAI Pisa", "color": "#e67e22"},
             {"url": "https://organizzazione.cai.it/sez-livorno/feed/", "name": "CAI Livorno", "color": "#9b59b6"},
+            {"url": "https://rss.app/feeds/uc1xw6gq3SrNFE33.xml/", "name": "FB CAI Livorno", "color": "#9b59b6"},
+            {"url": "https://rss.app/feeds/1z5cCnFgCEsTaTum.xml", "name": "FB CAI Viareggio", "color": "#3b5998"},
             {"url": "https://caiviareggio.it/feed/", "name": "CAI Viareggio", "color": "#3b5998"},
             {"url": "https://www.caifortedeimarmi.it/feed/", "name": "CAI Forte d. Marmi", "color": "#3498db"}, 
             {"url": "https://www.caipontedera.it/feed/", "name": "CAI Pontedera", "color": "#1abc9c"},
@@ -182,16 +184,16 @@ GROUPS = {
         ]
     },
     "nord.html": {
-        "title": "Toscana Nord (Pistoia, Luccca, Barga, Castelnuovo G., Maresca, Pescia, Fivizzano, Pontremoli)",
+        "title": "Toscana Nord (Pistoia, Lucca, Pontremoli, Fivizzano)",
         "sites": [
             {"url": "https://www.caipistoia.org/feed/", "name": "CAI Pistoia", "color": "#8e44ad"},
             {"url": "https://www.cailucca.it/feed/", "name": "CAI Lucca", "color": "#34495e"},
-            {"url": "https://www.caifivizzano.it/feed/", "name": "CAI Fivizzano", "color": "#3b5998"},
-            {"url": "https://caipontremoli.it/feed/", "name": "CAI Pontremoli", "color": "#9b59b6"} 
+            {"url": "https://caipontremoli.it/feed/", "name": "CAI Pontremoli", "color": "#9b59b6"},
+            {"url": "https://www.caifivizzano.it/feed/", "name": "CAI Fivizzano", "color": "#27ae60"}
          ]
     },
     "firenze.html": {
-        "title": "Area Fiorentina (Firenze, Prato, Sesto, Scandicci, Pontassieve, Agliana, Valdarno Inf.)",
+        "title": "Area Fiorentina (Firenze, Sesto, Scandicci, Prato, Pontassieve, Valdarno Inf.)",
         "sites": [
             {"url": "https://www.caifirenze.it/feed/", "name": "CAI Firenze", "color": "#c0392b"},
             {"url": "https://www.caisesto.it/feed/", "name": "CAI Sesto F.", "color": "#2980b9"},
