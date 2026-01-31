@@ -15,7 +15,11 @@ def send_telegram_alert(title, link, source):
     if not TG_TOKEN or not TG_CHAT_ID: return 
     message = f"🚨 *Nuovo Evento CAI*\n\n📍 *{source}*\n📝 {title}\n\n🔗 [Leggi di più]({link})"
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    data = {"chat_id": TG_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    data = {
+        "chat_id": TG_CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
     try:
         requests.post(url, data=data)
         time.sleep(1)
@@ -28,9 +32,11 @@ def clean_html(raw_html):
     return re.sub(cleanr, '', raw_html)
 
 def is_recent(dt_obj):
+    # Controllo sulle ultime 9 ore
     return (datetime.now() - dt_obj) < timedelta(hours=9)
 
 def clean_filename(url):
+    """Estrae un titolo leggibile dal nome del file nell'URL."""
     try:
         filename = url.split('/')[-1]
         name = filename.rsplit('.', 1)[0]
@@ -42,6 +48,7 @@ def clean_filename(url):
         return ""
 
 def extract_date_from_url(url):
+    """Cerca pattern tipo /2024/02/ nell'URL per datare l'immagine."""
     try:
         match = re.search(r'/(\d{4})/(\d{2})/', url)
         if match:
@@ -60,6 +67,9 @@ def format_date_friendly(dt):
 
 # --- ESTRAZIONE INTELLIGENTE DATE EVENTI ---
 def extract_event_date_from_text(text):
+    """
+    Cerca di indovinare la data dell'evento dal testo (Titolo o descrizione).
+    """
     text = text.lower()
     months = {
         'gennaio': 1, 'gen': 1, 'febbraio': 2, 'feb': 2, 'marzo': 3, 'mar': 3,
@@ -79,7 +89,7 @@ def extract_event_date_from_text(text):
             found_date = datetime(y, m, d)
         except: pass
 
-    # 2. Cerca formato dd/mm
+    # 2. Cerca formato dd/mm (presume anno corrente o prossimo)
     if not found_date:
         match_short = re.search(r'(\d{1,2})[/-](\d{1,2})', text)
         if match_short:
@@ -87,12 +97,13 @@ def extract_event_date_from_text(text):
                 d, m = int(match_short.group(1)), int(match_short.group(2))
                 y = today.year
                 temp_date = datetime(y, m, d)
+                # Se la data è passata da più di 30 giorni, probabilmente è dell'anno prossimo
                 if temp_date < today - timedelta(days=30):
                     y += 1
                 found_date = datetime(y, m, d)
             except: pass
 
-    # 3. Cerca formato testuale
+    # 3. Cerca formato testuale (25 Maggio)
     if not found_date:
         for m_name, m_num in months.items():
             pattern = r'(\d{1,2})\s+(?:di\s+)?' + m_name
@@ -104,11 +115,12 @@ def extract_event_date_from_text(text):
                     temp_date = datetime(y, m_num, d)
                     if temp_date < today - timedelta(days=60):
                         y += 1
-                    found_date = datetime(y, m, d)
+                    found_date = datetime(y, m_num, d)
                     break 
                 except: pass
     
-    if found_date and found_date > today - timedelta(days=90):
+    # Restituisce la data trovata
+    if found_date:
         return found_date
             
     return None
@@ -139,6 +151,7 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
             resp = requests.get(url, headers=headers, timeout=15)
             soup = BeautifulSoup(resp.text, 'html.parser')
             
+            # Link
             for link in soup.find_all('a'):
                 href = link.get('href')
                 if href and href.lower().endswith(EXTS):
@@ -180,6 +193,7 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
                         "source": source_name, "color": color
                     })
 
+            # Immagini Visualizzate
             for img in soup.find_all('img'):
                 src = img.get('src')
                 if src and src.lower().endswith(EXTS):
@@ -227,8 +241,6 @@ GROUPS = {
         "sites": [
             {"url": "https://www.caipisa.it/feed/", "name": "CAI Pisa", "color": "#e67e22"},
             {"url": "https://organizzazione.cai.it/sez-livorno/feed/", "name": "CAI Livorno", "color": "#9b59b6"},
-            {"url": "https://rss.app/feeds/uc1xw6gq3SrNFE33.xml/", "name": "FB CAI Livorno", "color": "#9b59b6"},
-            {"url": "https://rss.app/feeds/1z5cCnFgCEsTaTum.xml", "name": "FB CAI Viareggio", "color": "#3b5998"},
             {"url": "https://caiviareggio.it/feed/", "name": "CAI Viareggio", "color": "#3b5998"},
             {"url": "https://www.caifortedeimarmi.it/feed/", "name": "CAI Forte d. Marmi", "color": "#3498db"}, 
             {"url": "https://www.caipontedera.it/feed/", "name": "CAI Pontedera", "color": "#1abc9c"},
@@ -239,12 +251,17 @@ GROUPS = {
         ]
     },
     "nord.html": {
-        "title": "Toscana Nord (Pistoia, Lucca, Pontremoli, Fivizzano)",
+        "title": "Toscana Nord (Pistoia, Lucca, Pontremoli, Fivizzano, Barga, Maresca, Castelnuovo, Pescia)",
         "sites": [
             {"url": "https://www.caipistoia.org/feed/", "name": "CAI Pistoia", "color": "#8e44ad"},
             {"url": "https://www.cailucca.it/feed/", "name": "CAI Lucca", "color": "#34495e"},
             {"url": "https://caipontremoli.it/feed/", "name": "CAI Pontremoli", "color": "#9b59b6"},
-            {"url": "https://www.caifivizzano.it/feed/", "name": "CAI Fivizzano", "color": "#27ae60"}
+            {"url": "https://www.caifivizzano.it/feed/", "name": "CAI Fivizzano", "color": "#27ae60"},
+            # Nuovi Siti aggiunti
+            {"url": "https://www.caibarga.it/feed/", "name": "CAI Barga", "color": "#d35400"},
+            {"url": "https://www.caimaresca.it/feed/", "name": "CAI Maresca", "color": "#16a085"},
+            {"url": "https://www.caicastelnuovogarfagnana.org/feed/", "name": "CAI Castelnuovo G.", "color": "#2980b9"},
+            {"url": "https://www.caipescia.it/feed/", "name": "CAI Pescia", "color": "#e67e22"}
          ]
     },
     "firenze.html": {
@@ -303,7 +320,7 @@ def write_html_file(filename, title, events, is_calendar=False):
             .card:hover {{ transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }}
             .badge {{ display: inline-block; padding: 4px 12px; border-radius: 9999px; color: white; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }}
             .date {{ float: right; color: #6b7280; font-size: 0.875rem; }}
-            /* NUOVO STILE HEADER DATA */
+            /* HEADER DATA A TUTTA LARGHEZZA */
             .date-header {{ 
                 background: #2c3e50; 
                 color: white; 
@@ -370,7 +387,7 @@ def write_html_file(filename, title, events, is_calendar=False):
 
 # --- ESECUZIONE PRINCIPALE ---
 GLOBAL_EVENTS = [] 
-CALENDAR_EVENTS = [] # Eventi futuri ordinati
+CALENDAR_EVENTS = [] 
 
 for filename, group_data in GROUPS.items():
     print(f"\n--- Elaborazione Gruppo: {group_data['title']} ---")
@@ -407,7 +424,8 @@ for filename, group_data in GROUPS.items():
                 }
                 current_group_events.append(ev)
                 
-                if event_date and event_date >= datetime.now().replace(hour=0, minute=0):
+                # FIX EVENTI FEBBRAIO: Uso .date() per ignorare l'ora e includere oggi
+                if event_date and event_date.date() >= datetime.now().date():
                     CALENDAR_EVENTS.append(ev)
 
         except Exception as e: print(f"Errore {site['name']}: {e}")
@@ -432,7 +450,8 @@ for filename, group_data in GROUPS.items():
             
         current_group_events.append(ev)
         
-        if ev.get('event_date') and ev['event_date'] >= datetime.now().replace(hour=0, minute=0):
+        # FIX EVENTI FEBBRAIO: Uso .date() per ignorare l'ora e includere oggi
+        if ev.get('event_date') and ev['event_date'].date() >= datetime.now().date():
              CALENDAR_EVENTS.append(ev)
 
     # C. Salva Gruppo
