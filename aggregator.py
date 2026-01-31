@@ -289,7 +289,7 @@ def get_nav_html(current_page):
     style_all = 'display: inline-block; text-decoration: none; margin: 5px; padding: 8px 15px; border-radius: 20px; font-weight: bold; border: 2px solid #333;'
     if current_page == "tutto.html": style_all += 'background-color: #333; color: white;'
     else: style_all += 'background-color: white; color: #333;'
-    nav += f'<a href="tutto.html" style="{style_all}">🌍 TUTTE LE SEZIONI</a> '
+    nav += f'<a href="tutto.html" style="{style_all}">🌍 TUTTE LE SEZIONI TOSCANA</a> '
 
     for filename, data in GROUPS.items():
         style = 'display: inline-block; text-decoration: none; margin: 5px; padding: 8px 15px; border-radius: 20px; font-weight: bold;'
@@ -467,4 +467,4 @@ write_html_file("tutto.html", "Tutti gli Eventi CAI (Aggregati)", GLOBAL_EVENTS)
 # Pagina Calendario
 print(f"\n--- Generazione Calendario Futuro ---")
 CALENDAR_EVENTS.sort(key=lambda x: x["event_date"])
-write_html_file("calendario.html", "📅 Calendario Prossimi Eventi CAI", CALENDAR_EVENTS, is_calendar=True)
+write_html_file("calendario.html", "📅 Calendario Prossimi Eventi CAI TOSCANA", CALENDAR_EVENTS, is_calendar=True)
