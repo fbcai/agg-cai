@@ -28,11 +28,9 @@ def clean_html(raw_html):
     return re.sub(cleanr, '', raw_html)
 
 def is_recent(dt_obj):
-    # Controllo sulle ultime 9 ore
     return (datetime.now() - dt_obj) < timedelta(hours=9)
 
 def clean_filename(url):
-    """Estrae un titolo leggibile dal nome del file nell'URL."""
     try:
         filename = url.split('/')[-1]
         name = filename.rsplit('.', 1)[0]
@@ -44,7 +42,6 @@ def clean_filename(url):
         return ""
 
 def extract_date_from_url(url):
-    """Cerca pattern tipo /2024/02/ nell'URL per datare l'immagine."""
     try:
         match = re.search(r'/(\d{4})/(\d{2})/', url)
         if match:
@@ -53,6 +50,67 @@ def extract_date_from_url(url):
             return datetime(year, month, 1)
     except:
         pass
+    return None
+
+def format_date_friendly(dt):
+    """Formatta la data in italiano (es. Domenica 12 Maggio)."""
+    days = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica']
+    months = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre']
+    return f"{days[dt.weekday()]} {dt.day} {months[dt.month-1]} {dt.year}"
+
+# --- ESTRAZIONE INTELLIGENTE DATE EVENTI ---
+def extract_event_date_from_text(text):
+    text = text.lower()
+    months = {
+        'gennaio': 1, 'gen': 1, 'febbraio': 2, 'feb': 2, 'marzo': 3, 'mar': 3,
+        'aprile': 4, 'apr': 4, 'maggio': 5, 'mag': 5, 'giugno': 6, 'giu': 6,
+        'luglio': 7, 'lug': 7, 'agosto': 8, 'ago': 8, 'settembre': 9, 'set': 9, 'sett': 9,
+        'ottobre': 10, 'ott': 10, 'novembre': 11, 'nov': 11, 'dicembre': 12, 'dic': 12
+    }
+    
+    today = datetime.now()
+    found_date = None
+
+    # 1. Cerca formato dd/mm/yyyy
+    match_full = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', text)
+    if match_full:
+        try:
+            d, m, y = int(match_full.group(1)), int(match_full.group(2)), int(match_full.group(3))
+            found_date = datetime(y, m, d)
+        except: pass
+
+    # 2. Cerca formato dd/mm
+    if not found_date:
+        match_short = re.search(r'(\d{1,2})[/-](\d{1,2})', text)
+        if match_short:
+            try:
+                d, m = int(match_short.group(1)), int(match_short.group(2))
+                y = today.year
+                temp_date = datetime(y, m, d)
+                if temp_date < today - timedelta(days=30):
+                    y += 1
+                found_date = datetime(y, m, d)
+            except: pass
+
+    # 3. Cerca formato testuale
+    if not found_date:
+        for m_name, m_num in months.items():
+            pattern = r'(\d{1,2})\s+(?:di\s+)?' + m_name
+            match_txt = re.search(pattern, text)
+            if match_txt:
+                try:
+                    d = int(match_txt.group(1))
+                    y = today.year
+                    temp_date = datetime(y, m_num, d)
+                    if temp_date < today - timedelta(days=60):
+                        y += 1
+                    found_date = datetime(y, m_num, d)
+                    break 
+                except: pass
+    
+    if found_date and found_date > today - timedelta(days=90):
+        return found_date
+            
     return None
 
 # --- SCRAPER SPECIFICI ---
@@ -81,7 +139,6 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
             resp = requests.get(url, headers=headers, timeout=15)
             soup = BeautifulSoup(resp.text, 'html.parser')
             
-            # 1. CERCA NEI LINK
             for link in soup.find_all('a'):
                 href = link.get('href')
                 if href and href.lower().endswith(EXTS):
@@ -104,7 +161,6 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
                     
                     seen.add(href)
                     
-                    # LOGICA DATAZIONE
                     dt = None
                     try:
                         head = requests.head(href, headers=headers, timeout=5)
@@ -124,7 +180,6 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
                         "source": source_name, "color": color
                     })
 
-            # 2. CERCA NELLE IMMAGINI VISUALIZZATE
             for img in soup.find_all('img'):
                 src = img.get('src')
                 if src and src.lower().endswith(EXTS):
@@ -158,7 +213,7 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
 # --- CONFIGURAZIONE GRUPPI ---
 GROUPS = {
     "index.html": {
-        "title": "Toscana Est (Arezzo, Siena, Sansepolcro, Stia, Valdarno Sup.)",
+        "title": "Toscana Est (Arezzo, Sansepolcro, Siena, Stia, Valdarno Sup.)",
         "sites": [
             {"url": "https://www.caiarezzo.it/feed/", "name": "CAI Arezzo", "color": "#e74c3c"},
             {"url": "https://caivaldarnosuperiore.it/feed/", "name": "CAI Valdarno Sup.", "color": "#2ecc71"},
@@ -182,7 +237,7 @@ GROUPS = {
         ]
     },
     "nord.html": {
-        "title": "Toscana Nord (Pistoia, Lucca, Barga, Maresca, Pescia, Castelnuovo G., Fivizzano, Pontremoli)",
+        "title": "Toscana Nord (Pistoia, Lucca, Pontremoli, Fivizzano)",
         "sites": [
             {"url": "https://www.caipistoia.org/feed/", "name": "CAI Pistoia", "color": "#8e44ad"},
             {"url": "https://www.cailucca.it/feed/", "name": "CAI Lucca", "color": "#34495e"},
@@ -191,7 +246,7 @@ GROUPS = {
          ]
     },
     "firenze.html": {
-        "title": "Area Fiorentina (Firenze, Sesto, Scandicci, Prato, Pontassieve, Agliana, Valdarno Inf.)",
+        "title": "Area Fiorentina (Firenze, Sesto, Scandicci, Prato, Pontassieve, Valdarno Inf.)",
         "sites": [
             {"url": "https://www.caifirenze.it/feed/", "name": "CAI Firenze", "color": "#c0392b"},
             {"url": "https://www.caisesto.it/feed/", "name": "CAI Sesto F.", "color": "#2980b9"},
@@ -206,6 +261,12 @@ GROUPS = {
 # --- GENERAZIONE HTML E NAVIGAZIONE ---
 def get_nav_html(current_page):
     nav = '<nav style="margin-bottom: 30px; text-align: center; line-height: 2.5;">'
+    
+    style_cal = 'display: inline-block; text-decoration: none; margin: 5px; padding: 8px 15px; border-radius: 20px; font-weight: bold; border: 2px solid #e67e22;'
+    if current_page == "calendario.html": style_cal += 'background-color: #e67e22; color: white;'
+    else: style_cal += 'background-color: white; color: #e67e22;'
+    nav += f'<a href="calendario.html" style="{style_cal}">📅 CALENDARIO FUTURO</a> '
+
     style_all = 'display: inline-block; text-decoration: none; margin: 5px; padding: 8px 15px; border-radius: 20px; font-weight: bold; border: 2px solid #333;'
     if current_page == "tutto.html": style_all += 'background-color: #333; color: white;'
     else: style_all += 'background-color: white; color: #333;'
@@ -220,7 +281,7 @@ def get_nav_html(current_page):
     nav += '</nav>'
     return nav
 
-def write_html_file(filename, title, events):
+def write_html_file(filename, title, events, is_calendar=False):
     nav_html = get_nav_html(filename)
     html = f"""
     <!DOCTYPE html>
@@ -240,6 +301,8 @@ def write_html_file(filename, title, events):
             .card:hover {{ transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }}
             .badge {{ display: inline-block; padding: 4px 12px; border-radius: 9999px; color: white; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }}
             .date {{ float: right; color: #6b7280; font-size: 0.875rem; }}
+            .date-header {{ background: #2c3e50; color: white; padding: 10px 20px; border-radius: 8px; margin: 30px 0 15px 0; font-size: 1.2rem; display: flex; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+            .date-header::before {{ content: '🗓'; margin-right: 10px; }}
             h2 {{ margin-top: 12px; margin-bottom: 8px; font-size: 1.25rem; }}
             h2 a {{ text-decoration: none; color: #111827; }}
             h2 a:hover {{ color: #2563eb; }}
@@ -256,14 +319,35 @@ def write_html_file(filename, title, events):
                 <div class="meta">Ultimo aggiornamento: {datetime.now().strftime('%d/%m/%Y alle %H:%M')}</div>
             </header>
     """
-    if not events: html += "<p style='text-align:center;'>Nessuna notizia trovata.</p>"
+    
+    if not events:
+        html += "<p style='text-align:center;'>Nessun evento futuro trovato (o data non riconosciuta).</p>"
+    
+    last_header_date = None
+
     for event in events:
-        date_str = event["date"].strftime("%d/%m/%Y")
+        # Se calendario: Raggruppa per data evento
+        if is_calendar:
+            current_date_obj = event.get('event_date', event['date'])
+            current_date_key = current_date_obj.date()
+            
+            # Se la data cambia rispetto all'evento precedente, stampa intestazione
+            if current_date_key != last_header_date:
+                friendly_date = format_date_friendly(current_date_obj)
+                html += f"<div class='date-header'>{friendly_date}</div>"
+                last_header_date = current_date_key
+            
+            # Non mostriamo la data duplicata nella card
+            sort_date_str = "" 
+        else:
+            # Pagine standard: mostra data pubblicazione nella card
+            sort_date_str = event['date'].strftime("%d/%m/%Y")
+
         html += f"""
             <div class="card" style="border-left-color: {event['color']}">
                 <div>
                     <span class="badge" style="background-color: {event['color']}">{event['source']}</span>
-                    <span class="date">{date_str}</span>
+                    <span class="date">{sort_date_str}</span>
                 </div>
                 <h2><a href="{event['link']}" target="_blank">{event['title']}</a></h2>
                 <div class="desc">{event['summary']}</div>
@@ -276,6 +360,8 @@ def write_html_file(filename, title, events):
 
 # --- ESECUZIONE PRINCIPALE ---
 GLOBAL_EVENTS = [] 
+CALENDAR_EVENTS = [] # Eventi futuri ordinati
+
 for filename, group_data in GROUPS.items():
     print(f"\n--- Elaborazione Gruppo: {group_data['title']} ---")
     current_group_events = []
@@ -298,28 +384,58 @@ for filename, group_data in GROUPS.items():
                     send_telegram_alert(entry.title, entry.link, site['name'])
                 
                 summ = clean_html(entry.get("summary", ""))
+                
+                text_to_scan = entry.title + " " + summ
+                event_date = extract_event_date_from_text(text_to_scan)
+                
                 if len(summ) > 250: summ = summ[:250] + "..."
-                ev = {"title": entry.title, "link": entry.link, "date": dt, "summary": summ, "source": site["name"], "color": site["color"]}
+                
+                ev = {
+                    "title": entry.title, "link": entry.link, "date": dt, 
+                    "summary": summ, "source": site["name"], "color": site["color"],
+                    "event_date": event_date
+                }
                 current_group_events.append(ev)
+                
+                if event_date and event_date >= datetime.now().replace(hour=0, minute=0):
+                    CALENDAR_EVENTS.append(ev)
+
         except Exception as e: print(f"Errore {site['name']}: {e}")
 
-    # B. SCRAPING SPECIFICI (Immagini/PDF)
+    # B. SCRAPING SPECIFICI
     site_names_in_group = [s['name'] for s in group_data['sites']]
-    
-    # 1. Sansepolcro
+    extra_events_list = []
     if "CAI Sansepolcro" in site_names_in_group:
-        current_group_events.extend(get_sansepolcro_media())
-
-    # 2. Grosseto
+        extra_events_list.extend(get_sansepolcro_media())
     if "CAI Grosseto" in site_names_in_group:
-        current_group_events.extend(get_grosseto_media())
+        extra_events_list.extend(get_grosseto_media())
+
+    for ev in extra_events_list:
+        extracted_date = extract_event_date_from_text(ev['title'])
+        
+        if extracted_date:
+            ev['event_date'] = extracted_date
+        elif ev['date'] > datetime.now():
+            ev['event_date'] = ev['date']
+        else:
+            ev['event_date'] = None
+            
+        current_group_events.append(ev)
+        
+        if ev.get('event_date') and ev['event_date'] >= datetime.now().replace(hour=0, minute=0):
+             CALENDAR_EVENTS.append(ev)
 
     # C. Salva Gruppo
     current_group_events.sort(key=lambda x: x["date"], reverse=True)
     write_html_file(filename, group_data['title'], current_group_events)
     GLOBAL_EVENTS.extend(current_group_events)
 
-# Totale
+# Pagina Generale
 print(f"\n--- Generazione Pagina Generale ---")
 GLOBAL_EVENTS.sort(key=lambda x: x["date"], reverse=True)
 write_html_file("tutto.html", "Tutti gli Eventi CAI (Aggregati)", GLOBAL_EVENTS)
+
+# Pagina Calendario
+print(f"\n--- Generazione Calendario Futuro ---")
+CALENDAR_EVENTS.sort(key=lambda x: x["event_date"])
+write_html_file("calendario.html", "📅 Calendario Prossimi Eventi CAI", CALENDAR_EVENTS, is_calendar=True)
