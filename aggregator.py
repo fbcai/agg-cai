@@ -227,7 +227,7 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
 # --- CONFIGURAZIONE GRUPPI ---
 GROUPS = {
     "index.html": {
-        "title": "Toscana Est (Arezzo, Sansepolcro, Siena, Stia, Valdarno Sup.)",
+        "title": "Toscana Est (Arezzo, Siena, Sansepolcro, Stia, Valdarno Sup.)",
         "sites": [
             {"url": "https://www.caiarezzo.it/feed/", "name": "CAI Arezzo", "color": "#e74c3c"},
             {"url": "https://caivaldarnosuperiore.it/feed/", "name": "CAI Valdarno Sup.", "color": "#2ecc71"},
@@ -237,7 +237,7 @@ GROUPS = {
         ]
     },
     "costa.html": {
-        "title": "Toscana Ovest (Pisa, Livorno, Lucca, Viareggio, Massa, Carrara, Grosseto, Pietrasanta, Forte dei Marmi, Pontedera)",
+        "title": "Toscana Ovest (Pisa, Livorno, Viareggio, Massa, Carrara, Grosseto, Pietrasanta, Forte dei Marmi, Pontedera)",
         "sites": [
             {"url": "https://www.caipisa.it/feed/", "name": "CAI Pisa", "color": "#e67e22"},
             {"url": "https://organizzazione.cai.it/sez-livorno/feed/", "name": "CAI Livorno", "color": "#9b59b6"},
