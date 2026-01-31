@@ -104,7 +104,7 @@ def extract_event_date_from_text(text):
                     temp_date = datetime(y, m_num, d)
                     if temp_date < today - timedelta(days=60):
                         y += 1
-                    found_date = datetime(y, m_num, d)
+                    found_date = datetime(y, m, d)
                     break 
                 except: pass
     
@@ -227,6 +227,8 @@ GROUPS = {
         "sites": [
             {"url": "https://www.caipisa.it/feed/", "name": "CAI Pisa", "color": "#e67e22"},
             {"url": "https://organizzazione.cai.it/sez-livorno/feed/", "name": "CAI Livorno", "color": "#9b59b6"},
+            {"url": "https://rss.app/feeds/uc1xw6gq3SrNFE33.xml/", "name": "FB CAI Livorno", "color": "#9b59b6"},
+            {"url": "https://rss.app/feeds/1z5cCnFgCEsTaTum.xml", "name": "FB CAI Viareggio", "color": "#3b5998"},
             {"url": "https://caiviareggio.it/feed/", "name": "CAI Viareggio", "color": "#3b5998"},
             {"url": "https://www.caifortedeimarmi.it/feed/", "name": "CAI Forte d. Marmi", "color": "#3498db"}, 
             {"url": "https://www.caipontedera.it/feed/", "name": "CAI Pontedera", "color": "#1abc9c"},
@@ -301,7 +303,19 @@ def write_html_file(filename, title, events, is_calendar=False):
             .card:hover {{ transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }}
             .badge {{ display: inline-block; padding: 4px 12px; border-radius: 9999px; color: white; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }}
             .date {{ float: right; color: #6b7280; font-size: 0.875rem; }}
-            .date-header {{ background: #2c3e50; color: white; padding: 10px 20px; border-radius: 8px; margin: 30px 0 15px 0; font-size: 1.2rem; display: flex; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+            /* NUOVO STILE HEADER DATA */
+            .date-header {{ 
+                background: #2c3e50; 
+                color: white; 
+                padding: 10px 20px; 
+                border-radius: 8px; 
+                margin: 30px 0 15px 0; 
+                font-size: 1.2rem; 
+                display: block; 
+                width: 100%;
+                box-sizing: border-box;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+            }}
             .date-header::before {{ content: '🗓'; margin-right: 10px; }}
             h2 {{ margin-top: 12px; margin-bottom: 8px; font-size: 1.25rem; }}
             h2 a {{ text-decoration: none; color: #111827; }}
@@ -326,21 +340,17 @@ def write_html_file(filename, title, events, is_calendar=False):
     last_header_date = None
 
     for event in events:
-        # Se calendario: Raggruppa per data evento
         if is_calendar:
             current_date_obj = event.get('event_date', event['date'])
             current_date_key = current_date_obj.date()
             
-            # Se la data cambia rispetto all'evento precedente, stampa intestazione
             if current_date_key != last_header_date:
                 friendly_date = format_date_friendly(current_date_obj)
                 html += f"<div class='date-header'>{friendly_date}</div>"
                 last_header_date = current_date_key
             
-            # Non mostriamo la data duplicata nella card
             sort_date_str = "" 
         else:
-            # Pagine standard: mostra data pubblicazione nella card
             sort_date_str = event['date'].strftime("%d/%m/%Y")
 
         html += f"""
