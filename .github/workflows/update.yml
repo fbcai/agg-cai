@@ -2,7 +2,7 @@ name: Aggiorna Sito CAI
 
 on:
   schedule:
-    - cron: '0 7,13,18,24 * * *'  # UTC - Gira alle 9:00, 15:00, 20:00 e 02:00 in ora solare
+    - cron: '0 0,7,13,18 * * *'  # UTC - Gira alle 9:00, 15:00, 20:00 e 02:00 in ora solare
   workflow_dispatch: # Permette avvio manuale
 
 permissions:
