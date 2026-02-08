@@ -13,7 +13,7 @@ TG_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 def send_telegram_alert(title, link, source):
     if not TG_TOKEN or not TG_CHAT_ID: return 
-    message = f"🚨 *Nuovo Evento CAI*\n\n📍 *{source}*\n📝 {title}\n\n🔗 [Leggi di più]({link})"
+    message = f"🚨 *Nuovo Evento CAI Toscana*\n\n📍 *{source}*\n📝 {title}\n\n🔗 [Leggi di più]({link})"
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
     data = {
         "chat_id": TG_CHAT_ID,
