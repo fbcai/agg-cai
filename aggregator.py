@@ -32,8 +32,8 @@ def clean_html(raw_html):
     return re.sub(cleanr, '', raw_html)
 
 def is_recent(dt_obj):
-    # Controllo sulle ultime 9 ore
-    return (datetime.now() - dt_obj) < timedelta(hours=9)
+    # Controllo sulle ultime 6 ore
+    return (datetime.now() - dt_obj) < timedelta(hours=6)
 
 def clean_filename(url):
     """Estrae un titolo leggibile dal nome del file nell'URL."""
