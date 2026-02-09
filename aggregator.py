@@ -99,6 +99,7 @@ def extract_event_date_from_text(text):
                 d, m = int(match_short.group(1)), int(match_short.group(2))
                 y = today.year
                 temp_date = datetime(y, m, d)
+                # Se la data è passata da più di 30 giorni, probabilmente è dell'anno prossimo
                 if temp_date < today - timedelta(days=30):
                     y += 1
                 found_date = datetime(y, m, d)
@@ -138,6 +139,67 @@ def get_sansepolcro_media():
 def get_grosseto_media():
     urls = ["https://caigrosseto.it/prossimi-eventi/"]
     return scrape_generic_media(urls, "CAI Grosseto", "https://caigrosseto.it", color="#16a085")
+
+def get_carrara_calendar():
+    """Scraper specifico per il calendario tabellare di CAI Carrara"""
+    url = "https://www.caicarrara.it/calendario-cai-carrara/calendario-generale-cai/calendario-generale-cai-carrara/"
+    source_name = "CAI Carrara Cal."
+    color = "#7f8c8d" # Grigio
+    events = []
+    
+    print(f"Scraping Calendario {source_name}...")
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (compatible; CAI-Aggregator/1.0)'}
+        resp = requests.get(url, headers=headers, timeout=15)
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        
+        # Cerca nel contenuto principale (spesso entry-content in WP)
+        content = soup.find('div', class_='entry-content') or soup.body
+        
+        # Analizza righe di tabelle (tr), elementi lista (li) o paragrafi (p)
+        # Questo approccio cerca qualsiasi testo che contenga una data
+        for tag in content.find_all(['tr', 'li', 'p']):
+            text = tag.get_text(" ", strip=True)
+            
+            # Cerca data
+            event_date = extract_event_date_from_text(text)
+            
+            # Se trova una data futura (o 2026+)
+            if event_date and event_date.year >= 2026:
+                
+                # Cerca link eventuale
+                link_tag = tag.find('a')
+                if link_tag and link_tag.get('href'):
+                    link = link_tag.get('href')
+                    if not link.startswith('http'): link = "https://www.caicarrara.it" + link
+                else:
+                    link = url # Se non c'è link specifico, usa quello del calendario
+                
+                # Pulisce titolo (taglia se troppo lungo)
+                title = text[:150] + "..." if len(text) > 150 else text
+                full_title = f"📅 {title}"
+
+                # Evita duplicati identici
+                if any(e['title'] == full_title for e in events): continue
+
+                # Notifica (facoltativa per scraping massivo, qui la lasciamo se recente)
+                # Ma per il calendario statico, difficile dire quando è stato "pubblicato".
+                # Usiamo datetime.now() come data scoperta.
+                
+                events.append({
+                    "title": full_title,
+                    "link": link,
+                    "date": datetime.now(), # Data scoperta
+                    "summary": "Evento estratto dal calendario generale CAI Carrara",
+                    "source": source_name,
+                    "color": color,
+                    "event_date": event_date
+                })
+                
+    except Exception as e:
+        print(f"Errore scraping Carrara: {e}")
+        
+    return events
 
 def get_facebook_events(page_url, source_name, color):
     """Scarica gli ultimi post da una pagina Facebook pubblica usando facebook-scraper."""
@@ -323,7 +385,8 @@ GROUPS = {
             {"url": "https://www.caipescia.it/feed/", "name": "CAI Pescia", "color": "#e67e22"},
             {"url": "https://www.facebook.com/groups/www.caipescia.it", "name": "FB CAI Pescia", "color": "#e67e22"},
             {"url": "https://www.facebook.com/cai.barga", "name": "FB CAI Barga", "color": "#d35400"},
-            {"url": "https://www.facebook.com/profile.php?id=100093533902575", "name": "FB CAI Garfagnana", "color": "#2980b9"}
+            {"url": "https://www.facebook.com/profile.php?id=100093533902575", "name": "FB CAI Garfagnana", "color": "#2980b9"},
+            {"url": "https://www.facebook.com/CaisezionediMassa", "name": "FB CAI Massa", "color": "#2c3e50"}
          ]
     },
     "firenze.html": {
@@ -348,4 +411,214 @@ def get_nav_html(current_page):
     else: style_cal += 'background-color: white; color: #e67e22;'
     nav += f'<a href="calendario.html" style="{style_cal}">📅 CALENDARIO FUTURO</a> '
 
-    style_all = 'display: inline-block; text-decoration:
+    style_all = 'display: inline-block; text-decoration: none; margin: 5px; padding: 8px 15px; border-radius: 20px; font-weight: bold; border: 2px solid #333;'
+    if current_page == "tutto.html": style_all += 'background-color: #333; color: white;'
+    else: style_all += 'background-color: white; color: #333;'
+    nav += f'<a href="tutto.html" style="{style_all}">🌍 TUTTE LE SEZIONI TOSCANA</a> '
+
+    for filename, data in GROUPS.items():
+        style = 'display: inline-block; text-decoration: none; margin: 5px; padding: 8px 15px; border-radius: 20px; font-weight: bold;'
+        if filename == current_page: style += 'background-color: #2563eb; color: white;'
+        else: style += 'background-color: #e5e7eb; color: #333;'
+        short_title = data['title'].split('(')[0].strip()
+        nav += f'<a href="{filename}" style="{style}">{short_title}</a>'
+    nav += '</nav>'
+    return nav
+
+def write_html_file(filename, title, events, is_calendar=False):
+    nav_html = get_nav_html(filename)
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="it">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{title}</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+        <style>
+            body {{ font-family: 'Inter', sans-serif; background-color: #f3f4f6; color: #1f2937; margin: 0; padding: 20px; }}
+            .container {{ max-width: 900px; margin: 0 auto; }}
+            header {{ text-align: center; margin-bottom: 20px; }}
+            h1 {{ color: #111827; margin-bottom: 5px; font-size: 1.8rem; }}
+            .meta {{ color: #6b7280; font-size: 0.9em; margin-bottom: 20px; }}
+            .card {{ background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); border-left: 6px solid #ccc; transition: transform 0.2s; }}
+            .card:hover {{ transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }}
+            .badge {{ display: inline-block; padding: 4px 12px; border-radius: 9999px; color: white; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }}
+            .date {{ float: right; color: #6b7280; font-size: 0.875rem; }}
+            /* HEADER DATA A TUTTA LARGHEZZA */
+            .date-header {{ 
+                background: #2c3e50; 
+                color: white; 
+                padding: 10px 20px; 
+                border-radius: 8px; 
+                margin: 30px 0 15px 0; 
+                font-size: 1.2rem; 
+                display: block; 
+                width: 100%;
+                box-sizing: border-box;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+            }}
+            .date-header::before {{ content: '🗓'; margin-right: 10px; }}
+            h2 {{ margin-top: 12px; margin-bottom: 8px; font-size: 1.25rem; }}
+            h2 a {{ text-decoration: none; color: #111827; }}
+            h2 a:hover {{ color: #2563eb; }}
+            .desc {{ color: #4b5563; line-height: 1.5; font-size: 0.95rem; margin-bottom: 16px; }}
+            .read-more {{ display: inline-block; color: #2563eb; font-weight: 600; text-decoration: none; }}
+            .read-more:hover {{ text-decoration: underline; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            {nav_html}
+            <header>
+                <h1>{title}</h1>
+                <div class="meta">Ultimo aggiornamento: {datetime.now().strftime('%d/%m/%Y alle %H:%M')}</div>
+            </header>
+    """
+    
+    if not events:
+        html += "<p style='text-align:center;'>Nessun evento futuro trovato (o data non riconosciuta).</p>"
+    
+    last_header_date = None
+
+    for event in events:
+        if is_calendar:
+            current_date_obj = event.get('event_date', event['date'])
+            current_date_key = current_date_obj.date()
+            
+            if current_date_key != last_header_date:
+                friendly_date = format_date_friendly(current_date_obj)
+                html += f"<div class='date-header'>{friendly_date}</div>"
+                last_header_date = current_date_key
+            
+            sort_date_str = "" 
+        else:
+            sort_date_str = event['date'].strftime("%d/%m/%Y")
+
+        html += f"""
+            <div class="card" style="border-left-color: {event['color']}">
+                <div>
+                    <span class="badge" style="background-color: {event['color']}">{event['source']}</span>
+                    <span class="date">{sort_date_str}</span>
+                </div>
+                <h2><a href="{event['link']}" target="_blank">{event['title']}</a></h2>
+                <div class="desc">{event['summary']}</div>
+                <a href="{event['link']}" class="read-more" target="_blank">Apri risorsa &rarr;</a>
+            </div>
+        """
+    html += "</div></body></html>"
+    with open(filename, "w", encoding="utf-8") as f: f.write(html)
+    print(f"✅ Generato: {filename}")
+
+# --- ESECUZIONE PRINCIPALE ---
+GLOBAL_EVENTS = [] 
+CALENDAR_EVENTS = [] 
+
+for filename, group_data in GROUPS.items():
+    print(f"\n--- Elaborazione Gruppo: {group_data['title']} ---")
+    current_group_events = []
+    
+    # GESTIONE RSS E FACEBOOK
+    for site in group_data["sites"]:
+        
+        # GESTIONE FACEBOOK
+        if "facebook.com" in site['url']:
+            fb_events = get_facebook_events(site['url'], site['name'], site['color'])
+            for ev in fb_events:
+                # --- FILTRO ANNO 2026 ---
+                if ev['date'].year < 2026: continue
+                # ------------------------
+                
+                current_group_events.append(ev)
+                if ev.get('event_date') and ev['event_date'].date() >= datetime.now().date():
+                    CALENDAR_EVENTS.append(ev)
+            continue # Passa al prossimo sito
+        
+        # GESTIONE RSS STANDARD
+        print(f"Scaricando {site['name']}...")
+        try:
+            feed = feedparser.parse(site['url'])
+            if not feed.entries: continue
+            for entry in feed.entries:
+                if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                    dt = datetime.fromtimestamp(time.mktime(entry.published_parsed))
+                elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
+                    dt = datetime.fromtimestamp(time.mktime(entry.updated_parsed))
+                else: dt = datetime.now()
+                
+                # --- FILTRO ANNO 2026 ---
+                if dt.year < 2026: continue
+                # ------------------------
+
+                if is_recent(dt):
+                    print(f"--> Notifica: {entry.title}")
+                    send_telegram_alert(entry.title, entry.link, site['name'])
+                
+                summ = clean_html(entry.get("summary", ""))
+                
+                text_to_scan = entry.title + " " + summ
+                event_date = extract_event_date_from_text(text_to_scan)
+                
+                if len(summ) > 250: summ = summ[:250] + "..."
+                
+                ev = {
+                    "title": entry.title, "link": entry.link, "date": dt, 
+                    "summary": summ, "source": site["name"], "color": site["color"],
+                    "event_date": event_date
+                }
+                current_group_events.append(ev)
+                
+                # FIX EVENTI FEBBRAIO: Uso .date() per ignorare l'ora e includere oggi
+                if event_date and event_date.date() >= datetime.now().date():
+                    CALENDAR_EVENTS.append(ev)
+
+        except Exception as e: print(f"Errore {site['name']}: {e}")
+
+    # B. SCRAPING SPECIFICI
+    site_names_in_group = [s['name'] for s in group_data['sites']]
+    extra_events_list = []
+    
+    if "CAI Sansepolcro" in site_names_in_group:
+        extra_events_list.extend(get_sansepolcro_media())
+    if "CAI Grosseto" in site_names_in_group:
+        extra_events_list.extend(get_grosseto_media())
+    # Aggiunta chiamata al nuovo scraper Carrara
+    if "CAI Carrara" in site_names_in_group:
+        extra_events_list.extend(get_carrara_calendar())
+
+    for ev in extra_events_list:
+        # --- FILTRO ANNO 2026 ---
+        if ev['date'].year < 2026: continue
+        # ------------------------
+
+        # Se non è già stata estratta la data (es. dal scraper Carrara), prova ora
+        if not ev.get('event_date'):
+            extracted_date = extract_event_date_from_text(ev['title'])
+            
+            if extracted_date:
+                ev['event_date'] = extracted_date
+            elif ev['date'] > datetime.now():
+                ev['event_date'] = ev['date']
+            else:
+                ev['event_date'] = None
+            
+        current_group_events.append(ev)
+        
+        # FIX EVENTI FEBBRAIO: Uso .date() per ignorare l'ora e includere oggi
+        if ev.get('event_date') and ev['event_date'].date() >= datetime.now().date():
+             CALENDAR_EVENTS.append(ev)
+
+    # C. Salva Gruppo
+    current_group_events.sort(key=lambda x: x["date"], reverse=True)
+    write_html_file(filename, group_data['title'], current_group_events)
+    GLOBAL_EVENTS.extend(current_group_events)
+
+# Pagina Generale
+print(f"\n--- Generazione Pagina Generale ---")
+GLOBAL_EVENTS.sort(key=lambda x: x["date"], reverse=True)
+write_html_file("tutto.html", "Tutti gli Eventi CAI (Aggregati)", GLOBAL_EVENTS)
+
+# Pagina Calendario
+print(f"\n--- Generazione Calendario Futuro ---")
+CALENDAR_EVENTS.sort(key=lambda x: x["event_date"])
+write_html_file("calendario.html", "📅 Calendario Prossimi Eventi CAI TOSCANA", CALENDAR_EVENTS, is_calendar=True)
