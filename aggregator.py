@@ -450,7 +450,7 @@ for filename, group_data in GROUPS.items():
 
     #GESTIONE RSS E FACEBOOK
     for site in group_data["sites"]:
-    # GESTIONE FACEBOOK
+       # GESTIONE FACEBOOK
        if "facebook.com" in site['url']:
             fb_events = get_facebook_events(site['url'], site['name'], site['color'])
             for ev in fb_events:
@@ -459,9 +459,9 @@ for filename, group_data in GROUPS.items():
                     CALENDAR_EVENTS.append(ev)
             continue # Passa al prossimo sito
     
-     # GESTIONE RSS STANDARD
-        print(f"Scaricando {site['name']}...")
-        try:
+       # GESTIONE RSS STANDARD
+       print(f"Scaricando {site['name']}...")
+       try:
             feed = feedparser.parse(site['url'])
             if not feed.entries: continue
             for entry in feed.entries:
@@ -493,7 +493,7 @@ for filename, group_data in GROUPS.items():
                 if event_date and event_date.date() >= datetime.now().date():
                     CALENDAR_EVENTS.append(ev)
 
-        except Exception as e: print(f"Errore {site['name']}: {e}")
+       except Exception as e: print(f"Errore {site['name']}: {e}")
 
     # B. SCRAPING SPECIFICI
     site_names_in_group = [s['name'] for s in group_data['sites']]
