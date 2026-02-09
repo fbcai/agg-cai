@@ -6,6 +6,7 @@ import time
 import re
 import os
 from email.utils import parsedate_to_datetime
+from facebook_scraper import get_posts
 
 # --- CONFIGURAZIONE NOTIFICHE ---
 TG_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -139,6 +140,58 @@ def get_grosseto_media():
     urls = ["https://caigrosseto.it/prossimi-eventi/"]
     return scrape_generic_media(urls, "CAI Grosseto", "https://caigrosseto.it", color="#16a085")
 
+def get_facebook_events(page_url, source_name, color):
+    """Scarica gli ultimi post da una pagina Facebook pubblica usando facebook-scraper."""
+    print(f"Scraping Facebook per {source_name}...")
+    fb_events = []
+    
+    # Estrae l'ID o nome pagina dall'URL (es. facebook.com/CAIViareggio -> CAIViareggio)
+    page_id = page_url.rstrip('/').split('/')[-1]
+    
+    try:
+        # Scarica 2 pagine di post (circa 4-8 post)
+        # cookies=None significa accesso pubblico anonimo (può fallire se FB blocca l'IP)
+        for post in get_posts(page_id, pages=2):
+            try:
+                post_text = post.get('text', '')
+                post_time = post.get('time') # Oggetto datetime
+                post_url = post.get('post_url')
+                post_image = post.get('image')
+                
+                # Se manca la data, usa oggi
+                if not post_time: post_time = datetime.now()
+                
+                # Titolo: prime 10 parole del post
+                title = " ".join(post_text.split()[:10]) + "..." if post_text else "Post Facebook"
+                
+                full_title = f"📘 [FB] {title}"
+                
+                # Cerca di estrarre data evento dal testo
+                event_date = extract_event_date_from_text(post_text)
+
+                if is_recent(post_time):
+                    send_telegram_alert(full_title, post_url, source_name)
+                
+                fb_events.append({
+                    "title": full_title,
+                    "link": post_url,
+                    "date": post_time,
+                    "summary": post_text[:300] + "...",
+                    "source": source_name,
+                    "color": color,
+                    "event_date": event_date
+                })
+            except Exception as e:
+                print(f"Errore parsing post FB: {e}")
+                continue
+                
+    except Exception as e:
+        print(f"Errore scraping Facebook {source_name} ({page_id}): {e}")
+        # Se fallisce (spesso capita su server cloud), non bloccare tutto lo script
+        pass
+        
+    return fb_events
+
 def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
     EXTS = ('.pdf', '.jpg', '.jpeg', '.png', '.webp')
     media_events = []
@@ -247,7 +300,9 @@ GROUPS = {
             {"url": "https://www.caicarrara.it/feed/", "name": "CAI Carrara", "color": "#7f8c8d"},
             {"url": "https://www.caigrosseto.it/feed/", "name": "CAI Grosseto", "color": "#16a085"},
             {"url": "https://www.caipietrasanta.it/feed/", "name": "CAI Pietrasanta", "color": "#d35400"},
-            {"url": "https://www.caimassa.it/feed/", "name": "CAI Massa", "color": "#2c3e50"}
+            {"url": "https://www.caimassa.it/feed/", "name": "CAI Massa", "color": "#2c3e50"},
+            {"url": "https://www.facebook.com/cailivorno", "name": "FB CAI Livorno", "color": "#3b5998"},
+            {"url": "https://www.facebook.com/CAIViareggio", "name": "FB CAI Viareggio", "color": "#3b5558"}
         ]
     },
     "nord.html": {
@@ -392,9 +447,19 @@ CALENDAR_EVENTS = []
 for filename, group_data in GROUPS.items():
     print(f"\n--- Elaborazione Gruppo: {group_data['title']} ---")
     current_group_events = []
-    
-    # A. RSS
+
+    #GESTIONE RSS E FACEBOOK
     for site in group_data["sites"]:
+    # GESTIONE FACEBOOK
+       if "facebook.com" in site['url']:
+            fb_events = get_facebook_events(site['url'], site['name'], site['color'])
+            for ev in fb_events:
+                current_group_events.append(ev)
+                if ev.get('event_date') and ev['event_date'].date() >= datetime.now().date():
+                    CALENDAR_EVENTS.append(ev)
+            continue # Passa al prossimo sito
+    
+     # GESTIONE RSS STANDARD
         print(f"Scaricando {site['name']}...")
         try:
             feed = feedparser.parse(site['url'])
