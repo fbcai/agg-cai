@@ -7,12 +7,21 @@ import re
 import os
 from email.utils import parsedate_to_datetime
 from facebook_scraper import get_posts
+import urllib.parse
 
 # --- CONFIGURAZIONE NOTIFICHE ---
 TG_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TG_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
+# --- CONFIGURAZIONE WHATSAPP MULTIPLO ---
+wa_phones_env = os.environ.get("WHATSAPP_PHONE", "")
+wa_keys_env = os.environ.get("WHATSAPP_KEY", "")
+
+WA_PHONES = [p.strip() for p in wa_phones_env.split(',') if p.strip()]
+WA_KEYS = [k.strip() for k in wa_keys_env.split(',') if k.strip()]
+
 def send_telegram_alert(title, link, source):
+    """Invia notifica su Telegram."""
     if not TG_TOKEN or not TG_CHAT_ID: return 
     message = f"🚨 *Nuovo Evento CAI Toscana*\n\n📍 *{source}*\n📝 {title}\n\n🔗 [Leggi di più]({link})"
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
@@ -26,6 +35,26 @@ def send_telegram_alert(title, link, source):
         time.sleep(1)
     except Exception as e:
         print(f"Errore invio Telegram: {e}")
+
+def send_whatsapp_alert(title, link, source):
+    """Invia notifica su WhatsApp a TUTTI i numeri configurati."""
+    if not WA_PHONES or not WA_KEYS: return
+    
+    message = f"🚨 *Nuovo Evento CAI Toscana*\n\n📍 *{source}*\n📝 {title}\n\n🔗 {link}"
+    encoded_msg = urllib.parse.quote(message)
+    
+    for phone, apikey in zip(WA_PHONES, WA_KEYS):
+        url = f"https://api.callmebot.com/whatsapp.php?phone={phone}&text={encoded_msg}&apikey={apikey}"
+        try:
+            requests.get(url, timeout=10)
+            time.sleep(1)
+        except Exception as e:
+            print(f"Errore invio WhatsApp a {phone}: {e}")
+
+def send_alerts(title, link, source):
+    """Wrapper che invia a tutti i canali."""
+    send_telegram_alert(title, link, source)
+    send_whatsapp_alert(title, link, source)
 
 # --- FUNZIONI DI SUPPORTO ---
 def clean_html(raw_html):
@@ -61,16 +90,13 @@ def extract_date_from_url(url):
     return None
 
 def format_date_friendly(dt):
-    """Formatta la data in italiano (es. Domenica 12 Maggio)."""
+    """Formatta la data in italiano."""
     days = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica']
     months = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre']
     return f"{days[dt.weekday()]} {dt.day} {months[dt.month-1]} {dt.year}"
 
 # --- ESTRAZIONE INTELLIGENTE DATE EVENTI ---
 def extract_event_date_from_text(text):
-    """
-    Cerca di indovinare la data dell'evento dal testo (Titolo o descrizione).
-    """
     if not text: return None
     text = text.lower()
     months = {
@@ -91,7 +117,7 @@ def extract_event_date_from_text(text):
             found_date = datetime(y, m, d)
         except: pass
 
-    # 2. Cerca formato dd/mm (presume anno corrente o prossimo)
+    # 2. Cerca formato dd/mm
     if not found_date:
         match_short = re.search(r'(\d{1,2})[/-](\d{1,2})', text)
         if match_short:
@@ -99,7 +125,6 @@ def extract_event_date_from_text(text):
                 d, m = int(match_short.group(1)), int(match_short.group(2))
                 y = today.year
                 temp_date = datetime(y, m, d)
-                # Se la data è passata da più di 30 giorni, probabilmente è dell'anno prossimo
                 if temp_date < today - timedelta(days=30):
                     y += 1
                 found_date = datetime(y, m, d)
@@ -141,10 +166,9 @@ def get_grosseto_media():
     return scrape_generic_media(urls, "CAI Grosseto", "https://caigrosseto.it", color="#16a085")
 
 def get_carrara_calendar():
-    """Scraper specifico per il calendario tabellare di CAI Carrara"""
     url = "https://www.caicarrara.it/calendario-cai-carrara/calendario-generale-cai/calendario-generale-cai-carrara/"
     source_name = "CAI Carrara Cal."
-    color = "#7f8c8d" # Grigio
+    color = "#7f8c8d" 
     events = []
     
     print(f"Scraping Calendario {source_name}...")
@@ -153,60 +177,43 @@ def get_carrara_calendar():
         resp = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(resp.text, 'html.parser')
         
-        # Cerca nel contenuto principale (spesso entry-content in WP)
         content = soup.find('div', class_='entry-content') or soup.body
         
-        # Analizza righe di tabelle (tr), elementi lista (li) o paragrafi (p)
-        # Questo approccio cerca qualsiasi testo che contenga una data
         for tag in content.find_all(['tr', 'li', 'p']):
             text = tag.get_text(" ", strip=True)
-            
-            # Cerca data
             event_date = extract_event_date_from_text(text)
             
-            # Se trova una data futura (o 2026+)
             if event_date and event_date.year >= 2026:
-                
-                # Cerca link eventuale
                 link_tag = tag.find('a')
                 if link_tag and link_tag.get('href'):
                     link = link_tag.get('href')
                     if not link.startswith('http'): link = "https://www.caicarrara.it" + link
                 else:
-                    link = url # Se non c'è link specifico, usa quello del calendario
+                    link = url 
                 
-                # Pulisce titolo (taglia se troppo lungo)
                 title = text[:150] + "..." if len(text) > 150 else text
                 full_title = f"📅 {title}"
 
-                # Evita duplicati identici
                 if any(e['title'] == full_title for e in events): continue
 
-                # Notifica (facoltativa per scraping massivo, qui la lasciamo se recente)
-                # Ma per il calendario statico, difficile dire quando è stato "pubblicato".
-                # Usiamo datetime.now() come data scoperta.
-                
                 events.append({
                     "title": full_title,
                     "link": link,
-                    "date": datetime.now(), # Data scoperta
+                    "date": datetime.now(), 
                     "summary": "Evento estratto dal calendario generale CAI Carrara",
                     "source": source_name,
                     "color": color,
                     "event_date": event_date
                 })
-                
     except Exception as e:
         print(f"Errore scraping Carrara: {e}")
         
     return events
 
 def get_facebook_events(page_url, source_name, color):
-    """Scarica gli ultimi post da una pagina Facebook pubblica usando facebook-scraper."""
     print(f"Scraping Facebook per {source_name}...")
     fb_events = []
     
-    # Estrae l'ID o nome pagina dall'URL
     try:
         if "profile.php" in page_url:
             page_id = page_url.split('id=')[-1]
@@ -218,7 +225,6 @@ def get_facebook_events(page_url, source_name, color):
         page_id = page_url 
 
     try:
-        # Scarica 2 pagine di post
         for post in get_posts(page_id, pages=2):
             try:
                 post_text = post.get('text', '')
@@ -233,7 +239,7 @@ def get_facebook_events(page_url, source_name, color):
                 event_date = extract_event_date_from_text(post_text)
 
                 if is_recent(post_time):
-                    send_telegram_alert(full_title, post_url, source_name)
+                    send_alerts(full_title, post_url, source_name)
                 
                 fb_events.append({
                     "title": full_title,
@@ -265,7 +271,6 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
             resp = requests.get(url, headers=headers, timeout=15)
             soup = BeautifulSoup(resp.text, 'html.parser')
             
-            # Link
             for link in soup.find_all('a'):
                 href = link.get('href')
                 if href and href.lower().endswith(EXTS):
@@ -296,11 +301,10 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
                     except: pass
                     
                     if not dt: dt = extract_date_from_url(href)
-                    # Se non trovo data, metto 2023. Verra' filtrato via se cerchiamo >= 2026
                     if not dt: dt = datetime(2023, 1, 1) 
                     
                     full_title = f"{icon} {type_lbl} {title}"
-                    if is_recent(dt): send_telegram_alert(full_title, href, source_name)
+                    if is_recent(dt): send_alerts(full_title, href, source_name)
                     
                     media_events.append({
                         "title": full_title, "link": href, "date": dt,
@@ -309,7 +313,6 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
                         "event_date": None
                     })
 
-            # Immagini Visualizzate
             for img in soup.find_all('img'):
                 src = img.get('src')
                 if src and src.lower().endswith(EXTS):
@@ -329,7 +332,9 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
                     if not dt: dt = datetime(2023, 1, 1)
 
                     full_title = f"🖼️ [IMG] {title}"
-                    if is_recent(dt): send_telegram_alert(full_title, src, source_name)
+                    
+                    if is_recent(dt): 
+                        send_alerts(full_title, src, source_name)
 
                     media_events.append({
                         "title": full_title, "link": src, "date": dt,
@@ -344,17 +349,19 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
 # --- CONFIGURAZIONE GRUPPI ---
 GROUPS = {
     "index.html": {
-        "title": "Toscana Est (Arezzo, Siena, Sansepolcro, Stia, Valdarno Sup.)",
+        "title": "Toscana SudEst (Arezzo, Siena, Grosseto, Sansepolcro, Stia, Valdarno Sup.)",
         "sites": [
             {"url": "https://www.caiarezzo.it/feed/", "name": "CAI Arezzo", "color": "#e74c3c"},
             {"url": "https://caivaldarnosuperiore.it/feed/", "name": "CAI Valdarno Sup.", "color": "#2ecc71"},
             {"url": "https://caistia.it/feed/", "name": "CAI Stia", "color": "#f1c40f"},
             {"url": "https://www.caisansepolcro.it/feed/", "name": "CAI Sansepolcro", "color": "#3498db"},
-            {"url": "https://organizzazione.cai.it/sez-siena/feed/", "name": "CAI Siena", "color": "#9b59b6"}
+            {"url": "https://organizzazione.cai.it/sez-siena/feed/", "name": "CAI Siena", "color": "#9b59b6"},
+            {"url": "https://www.caigrosseto.it/feed/", "name": "CAI Grosseto", "color": "#16a085"},
+            {"url": "https://www.facebook.com/groups/1487615384876547", "name": "FB CAI Grosseto", "color": "#16a085"}
         ]
     },
     "costa.html": {
-        "title": "Toscana Ovest (Pisa, Livorno, Viareggio, Massa, Carrara, Grosseto, Pietrasanta, Forte, Pontedera)",
+        "title": "Toscana Ovest (Pisa, Livorno, Viareggio, Massa, Carrara, Pietrasanta, Forte, Pontedera)",
         "sites": [
             {"url": "https://www.caipisa.it/feed/", "name": "CAI Pisa", "color": "#e67e22"},
             {"url": "https://organizzazione.cai.it/sez-livorno/feed/", "name": "CAI Livorno", "color": "#9b59b6"},
@@ -362,13 +369,11 @@ GROUPS = {
             {"url": "https://www.caifortedeimarmi.it/feed/", "name": "CAI Forte d. Marmi", "color": "#3498db"}, 
             {"url": "https://www.caipontedera.it/feed/", "name": "CAI Pontedera", "color": "#1abc9c"},
             {"url": "https://www.caicarrara.it/feed/", "name": "CAI Carrara", "color": "#7f8c8d"},
-            {"url": "https://www.caigrosseto.it/feed/", "name": "CAI Grosseto", "color": "#16a085"},
             {"url": "https://www.caipietrasanta.it/feed/", "name": "CAI Pietrasanta", "color": "#d35400"},
             {"url": "https://www.caimassa.it/feed/", "name": "CAI Massa", "color": "#2c3e50"},
             {"url": "https://www.facebook.com/cailivorno", "name": "FB CAI Livorno", "color": "#3b5998"},
             {"url": "https://www.facebook.com/CAIViareggio", "name": "FB CAI Viareggio", "color": "#3b5558"},
             {"url": "https://www.facebook.com/CaiPietrasanta/", "name": "FB CAI Pietrasanta", "color": "#d35400"},
-            {"url": "https://www.facebook.com/groups/1487615384876547", "name": "FB CAI Grosseto", "color": "#16a085"},
             {"url": "https://www.facebook.com/cai.fortedeimarmi", "name": "FB CAI Forte", "color": "#3498db"}
         ]
     },
@@ -552,7 +557,7 @@ for filename, group_data in GROUPS.items():
 
                 if is_recent(dt):
                     print(f"--> Notifica: {entry.title}")
-                    send_telegram_alert(entry.title, entry.link, site['name'])
+                    send_alerts(entry.title, entry.link, site['name'])
                 
                 summ = clean_html(entry.get("summary", ""))
                 
@@ -582,7 +587,6 @@ for filename, group_data in GROUPS.items():
         extra_events_list.extend(get_sansepolcro_media())
     if "CAI Grosseto" in site_names_in_group:
         extra_events_list.extend(get_grosseto_media())
-    # Aggiunta chiamata al nuovo scraper Carrara
     if "CAI Carrara" in site_names_in_group:
         extra_events_list.extend(get_carrara_calendar())
 
@@ -591,7 +595,6 @@ for filename, group_data in GROUPS.items():
         if ev['date'].year < 2026: continue
         # ------------------------
 
-        # Se non è già stata estratta la data (es. dal scraper Carrara), prova ora
         if not ev.get('event_date'):
             extracted_date = extract_event_date_from_text(ev['title'])
             
