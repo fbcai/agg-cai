@@ -551,7 +551,7 @@ GROUPS = {
         "title": "Toscana Nord (Pistoia, Lucca, Pontremoli, Fivizzano, Barga, Maresca, Castelnuovo, Pescia)",
         "sites": [
             {"url": "https://www.caipistoia.org/feed/", "name": "CAI Pistoia", "color": "#8e44ad"},
-            {"url": "https://www.cailucca.it/feed/", "name": "CAI Lucca", "color": "#34495e"},
+            {"url": "https://www.cailucca.it/wp/feed/", "name": "CAI Lucca", "color": "#34495e"},
             {"url": "https://caipontremoli.it/feed/", "name": "CAI Pontremoli", "color": "#9b59b6"},
             {"url": "https://www.caifivizzano.it/feed/", "name": "CAI Fivizzano", "color": "#27ae60"},
             # CAI BARGA GESTITO DALLO SCRAPER SPECIFICO, QUI SOLO PLACEHOLDER
