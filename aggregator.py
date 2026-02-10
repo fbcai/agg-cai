@@ -99,7 +99,7 @@ def format_date_friendly(dt):
 def extract_event_date_from_text(text):
     """
     Cerca di indovinare la data dell'evento dal testo.
-    Gestisce range tipo "4/5 febbraio" o "4 al 5 febbraio" prendendo il 4.
+    Gestisce range tipo "4/5 febbraio" prendendo il 4 febbraio.
     """
     if not text: return None
     text = text.lower()
@@ -124,24 +124,20 @@ def extract_event_date_from_text(text):
 
     # 2. PRIORITÀ MEDIA: Formato Testuale
     for m_name, m_num in months.items():
-        
-        # A. Cerca PRIMA i range (es. "4 al 5 febbraio", "4-5 febbraio", "4 e 5 febbraio")
-        # Regex: numero + spazi + (separatore: - / e al) + spazi + numero + spazi + mese
+        # A. Cerca PRIMA i range
         range_pattern = r'(\d{1,2})\s*(?:[-/e]|al|&)\s*(?:\d{1,2})\s+(?:di\s+)?' + m_name
         match_range = re.search(range_pattern, text)
-        
         if match_range:
             try:
-                d = int(match_range.group(1)) # Prende il PRIMO giorno (X)
+                d = int(match_range.group(1)) # Prende il PRIMO giorno
                 y = today.year
                 temp_date = datetime(y, m_num, d)
-                if temp_date < today - timedelta(days=60):
-                    y += 1
+                if temp_date < today - timedelta(days=60): y += 1
                 found_date = datetime(y, m_num, d)
                 return found_date
             except: pass
 
-        # B. Se non è un range, cerca data singola (es. "5 febbraio")
+        # B. Data singola
         single_pattern = r'(\d{1,2})\s+(?:di\s+)?' + m_name
         match_single = re.search(single_pattern, text)
         if match_single:
@@ -149,8 +145,7 @@ def extract_event_date_from_text(text):
                 d = int(match_single.group(1))
                 y = today.year
                 temp_date = datetime(y, m_num, d)
-                if temp_date < today - timedelta(days=60):
-                    y += 1
+                if temp_date < today - timedelta(days=60): y += 1
                 found_date = datetime(y, m_num, d)
                 return found_date
             except: pass
@@ -161,11 +156,9 @@ def extract_event_date_from_text(text):
         try:
             d, m = int(match_short.group(1)), int(match_short.group(2))
             if m > 12: return None 
-            
             y = today.year
             temp_date = datetime(y, m, d)
-            if temp_date < today - timedelta(days=30):
-                y += 1
+            if temp_date < today - timedelta(days=30): y += 1
             found_date = datetime(y, m, d)
             return found_date
         except: pass
@@ -200,38 +193,51 @@ def get_carrara_calendar():
         resp = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(resp.text, 'html.parser')
         
+        # Cerca nel contenuto principale
         content = soup.find('div', class_='component-content') or soup.find('main') or soup.body
         seen_links = set()
 
-        for tag in content.find_all(['div', 'tr', 'p', 'li']):
+        # Scorre tutti i tag che potrebbero contenere testo
+        for tag in content.find_all(['div', 'tr', 'p', 'li', 'span']):
             text = tag.get_text(" ", strip=True)
             
-            # Cerca data specifica "Data: gg/mm/aaaa"
-            specific_match = re.search(r'Data\s*:?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{4})', text, re.IGNORECASE)
+            # --- REGEX MIGLIORATA PER CARRARA ---
+            # Cerca "Data" seguita da qualsiasi cosa (.*?) poi cifre/cifre/cifre
+            # Pattern: Data + (opzionali spazi/due punti/testo) + GG + (sep) + MM + (sep) + AAAA
+            match = re.search(r'Data.*?(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})', text, re.IGNORECASE)
             
-            if specific_match:
+            if match:
                 try:
-                    d_str = specific_match.group(1).replace('-', '/')
-                    d, m, y = map(int, d_str.split('/'))
-                    event_date = datetime(y, m, d)
-                except:
-                    continue
+                    # Estrazione precisa dai gruppi della Regex
+                    day = int(match.group(1))
+                    month = int(match.group(2))
+                    year = int(match.group(3))
+                    event_date = datetime(year, month, day)
+                except ValueError:
+                    continue # Data non valida (es. mese 13)
                 
                 # FILTRO 2026
                 if event_date.year >= 2026:
+                    
+                    # RICERCA LINK (Risale l'albero se necessario)
                     link_tag = tag.find('a')
                     if not link_tag and tag.parent:
                         link_tag = tag.parent.find('a')
+                    if not link_tag and tag.parent.parent:
+                        link_tag = tag.parent.parent.find('a')
 
                     if link_tag and link_tag.get('href'):
                         raw_link = link_tag.get('href').strip()
                         link = urllib.parse.urljoin(base_domain, raw_link)
                         
+                        # Titolo: prova a prendere il testo del link, altrimenti pulisci il testo della data
                         title_text = link_tag.get_text(strip=True)
-                        if not title_text or len(title_text) < 5:
-                            title_text = text.replace("Data", "").replace(d_str, "")[:100]
+                        if not title_text or len(title_text) < 5 or "leggi tutto" in title_text.lower():
+                            # Se il link ha testo generico, cerca il titolo nel parent o nel testo grezzo
+                            clean_text = re.sub(r'Data.*?(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})', '', text, flags=re.IGNORECASE)
+                            title_text = clean_text[:100].strip()
                         
-                        full_title = f"⛰️ {title_text.strip()}"
+                        full_title = f"⛰️ {title_text}"
 
                         if link in seen_links: continue
                         seen_links.add(link)
@@ -240,7 +246,7 @@ def get_carrara_calendar():
                             "title": full_title,
                             "link": link,
                             "date": datetime.now(), 
-                            "summary": f"Evento CAI Carrara del {d_str}",
+                            "summary": f"Evento CAI Carrara del {day}/{month}/{year}",
                             "source": source_name,
                             "color": color,
                             "event_date": event_date
@@ -253,7 +259,6 @@ def get_carrara_calendar():
 def get_facebook_events(page_url, source_name, color):
     print(f"Scraping Facebook per {source_name}...")
     fb_events = []
-    
     try:
         if "profile.php" in page_url:
             page_id = page_url.split('id=')[-1]
@@ -275,7 +280,6 @@ def get_facebook_events(page_url, source_name, color):
                 
                 title = " ".join(post_text.split()[:10]) + "..." if post_text else "Post Facebook"
                 full_title = f"📘 [FB] {title}"
-                
                 event_date = extract_event_date_from_text(post_text)
 
                 if is_recent(post_time):
@@ -290,13 +294,10 @@ def get_facebook_events(page_url, source_name, color):
                     "color": color,
                     "event_date": event_date
                 })
-            except Exception as e:
-                continue
-                
+            except Exception as e: continue     
     except Exception as e:
         print(f"Errore scraping Facebook {source_name} ({page_id}): {e}")
         pass
-        
     return fb_events
 
 def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
