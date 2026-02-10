@@ -202,20 +202,18 @@ def get_carrara_calendar():
         links_to_check = set()
         for a in main_content.find_all('a', href=True):
             href = a['href']
-            # FILTRO: Deve contenere 'lista-eventi/' (con lo slash) che indica un articolo figlio
-            # e NON deve essere un link di login/stampa/email generico, ma la struttura
-            # /login-utenti-cai/lista-eventi/... è quella corretta degli articoli.
+            # FILTRO: Link articoli interni
             if "lista-eventi/" in href and ".html" in href:
                 full_link = urllib.parse.urljoin(base_domain, href.strip())
-                if full_link != base_url: # Evita la pagina lista stessa
+                if full_link != base_url: 
                     links_to_check.add(full_link)
         
         print(f" -> Trovati {len(links_to_check)} link potenziali CAI Carrara. Analisi in corso...")
 
-        # 2. ENTRA IN OGNI LINK E CERCA LA DATA
+        # 2. ENTRA IN OGNI LINK
         for link in links_to_check:
             try:
-                time.sleep(2) # SLOW DOWN: 2 secondi come richiesto
+                time.sleep(2) # SLOW DOWN
                 sub_resp = requests.get(link, headers=headers, timeout=10)
                 sub_soup = BeautifulSoup(sub_resp.text, 'html.parser')
                 
@@ -226,12 +224,11 @@ def get_carrara_calendar():
                 if date_span:
                     date_text = date_span.get_text(strip=True)
                     try:
-                        # Parsing data dd/mm/yyyy
                         event_date = datetime.strptime(date_text, "%d/%m/%Y")
                     except:
                         pass
                 
-                # Fallback: Se non trova lo span, prova nel titolo o contenuto
+                # Fallback data
                 if not event_date:
                     title_tag = sub_soup.find('title')
                     if title_tag:
@@ -239,13 +236,20 @@ def get_carrara_calendar():
 
                 # SE DATA VALIDA E FUTURA (2026+)
                 if event_date and event_date.year >= 2026:
-                    # Estrae titolo (spesso h2 class="item-title" o simile in Joomla)
-                    title_h = sub_soup.find('h2', class_='item-title') or sub_soup.find('h1')
-                    title = title_h.get_text(strip=True) if title_h else "Evento CAI Carrara"
+                    
+                    # --- ESTRAZIONE TITOLO DAL TAG <TITLE> ---
+                    page_title_tag = sub_soup.find('title')
+                    if page_title_tag and page_title_tag.string:
+                        # Pulisce eventuali suffissi del sito
+                        raw_title = page_title_tag.string.strip()
+                        title = raw_title.replace("- CAI Carrara", "").strip()
+                    else:
+                        # Fallback su H2/H1
+                        title_h = sub_soup.find('h2', class_='item-title') or sub_soup.find('h1')
+                        title = title_h.get_text(strip=True) if title_h else "Evento CAI Carrara"
                     
                     full_title = f"⛰️ {title}"
                     
-                    # Evita duplicati
                     if any(e['link'] == link for e in events): continue
 
                     events.append({
