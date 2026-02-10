@@ -97,6 +97,10 @@ def format_date_friendly(dt):
 
 # --- ESTRAZIONE INTELLIGENTE DATE EVENTI ---
 def extract_event_date_from_text(text):
+    """
+    Cerca di indovinare la data dell'evento dal testo.
+    Gestisce range tipo "4/5 febbraio" prendendo il 4 febbraio.
+    """
     if not text: return None
     text = text.lower()
     months = {
@@ -109,45 +113,52 @@ def extract_event_date_from_text(text):
     today = datetime.now()
     found_date = None
 
-    # 1. Cerca formato dd/mm/yyyy
+    # 1. PRIORITÀ ALTA: Formato completo dd/mm/yyyy
     match_full = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', text)
     if match_full:
         try:
             d, m, y = int(match_full.group(1)), int(match_full.group(2)), int(match_full.group(3))
             found_date = datetime(y, m, d)
+            return found_date
         except: pass
 
-    # 2. Cerca formato dd/mm
-    if not found_date:
-        match_short = re.search(r'(\d{1,2})[/-](\d{1,2})', text)
-        if match_short:
+    # 2. PRIORITÀ MEDIA: Formato Testuale (gestisce range "4/5 febbraio")
+    # Spostato PRIMA del controllo dd/mm per evitare falsi positivi (4/5 -> 4 Maggio)
+    for m_name, m_num in months.items():
+        # Regex che cerca: Giorno + (opzionale /Giorno o -Giorno) + Mese
+        # Es: "4 febbraio", "4/5 febbraio", "4-5 febbraio"
+        pattern = r'(\d{1,2})(?:[/-]\d{1,2})?\s+(?:di\s+)?' + m_name
+        match_txt = re.search(pattern, text)
+        if match_txt:
             try:
-                d, m = int(match_short.group(1)), int(match_short.group(2))
+                d = int(match_txt.group(1)) # Prende sempre il primo giorno
                 y = today.year
-                temp_date = datetime(y, m, d)
-                if temp_date < today - timedelta(days=30):
+                temp_date = datetime(y, m_num, d)
+                
+                # Se la data è passata da molto, assumi anno prossimo
+                if temp_date < today - timedelta(days=60):
                     y += 1
-                found_date = datetime(y, m, d)
+                
+                found_date = datetime(y, m_num, d)
+                return found_date
             except: pass
 
-    # 3. Cerca formato testuale
-    if not found_date:
-        for m_name, m_num in months.items():
-            pattern = r'(\d{1,2})\s+(?:di\s+)?' + m_name
-            match_txt = re.search(pattern, text)
-            if match_txt:
-                try:
-                    d = int(match_txt.group(1))
-                    y = today.year
-                    temp_date = datetime(y, m_num, d)
-                    if temp_date < today - timedelta(days=60):
-                        y += 1
-                    found_date = datetime(y, m, d)
-                    break 
-                except: pass
-    
-    if found_date:
-        return found_date
+    # 3. PRIORITÀ BASSA: Formato breve dd/mm
+    # Eseguito solo se non abbiamo trovato un mese testuale
+    match_short = re.search(r'(\d{1,2})[/-](\d{1,2})', text)
+    if match_short:
+        try:
+            d, m = int(match_short.group(1)), int(match_short.group(2))
+            # Controllo validità mese
+            if m > 12: return None 
+            
+            y = today.year
+            temp_date = datetime(y, m, d)
+            if temp_date < today - timedelta(days=30):
+                y += 1
+            found_date = datetime(y, m, d)
+            return found_date
+        except: pass
             
     return None
 
@@ -167,6 +178,7 @@ def get_grosseto_media():
 
 def get_carrara_calendar():
     url = "https://www.caicarrara.it/calendario-cai-carrara/calendario-generale-cai/calendario-generale-cai-carrara/"
+    base_domain = "https://www.caicarrara.it" 
     source_name = "CAI Carrara Cal."
     color = "#7f8c8d" 
     events = []
@@ -179,15 +191,27 @@ def get_carrara_calendar():
         
         content = soup.find('div', class_='entry-content') or soup.body
         
-        for tag in content.find_all(['tr', 'li', 'p']):
+        for tag in content.find_all(['tr', 'li', 'p', 'div']):
             text = tag.get_text(" ", strip=True)
-            event_date = extract_event_date_from_text(text)
+            
+            # Cerca data specifica "Data: gg/mm/aaaa"
+            specific_match = re.search(r'Data\s*:?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{4})', text, re.IGNORECASE)
+            
+            if specific_match:
+                try:
+                    d_str = specific_match.group(1).replace('-', '/')
+                    d, m, y = map(int, d_str.split('/'))
+                    event_date = datetime(y, m, d)
+                except:
+                    event_date = extract_event_date_from_text(text)
+            else:
+                event_date = extract_event_date_from_text(text)
             
             if event_date and event_date.year >= 2026:
                 link_tag = tag.find('a')
                 if link_tag and link_tag.get('href'):
-                    link = link_tag.get('href')
-                    if not link.startswith('http'): link = "https://www.caicarrara.it" + link
+                    raw_link = link_tag.get('href').strip()
+                    link = urllib.parse.urljoin(base_domain, raw_link)
                 else:
                     link = url 
                 
@@ -274,11 +298,12 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
             for link in soup.find_all('a'):
                 href = link.get('href')
                 if href and href.lower().endswith(EXTS):
-                    if not href.startswith('http'): href = base_domain + href.lstrip('/')
-                    if href in seen: continue
-                    if "aquila" in href.lower() or "cropped" in href.lower(): continue
+                    full_link = urllib.parse.urljoin(base_domain, href.strip())
+                    
+                    if full_link in seen: continue
+                    if "aquila" in full_link.lower() or "cropped" in full_link.lower(): continue
 
-                    is_pdf = href.lower().endswith('.pdf')
+                    is_pdf = full_link.lower().endswith('.pdf')
                     icon = "📄" if is_pdf else "🖼️"
                     type_lbl = "[PDF]" if is_pdf else "[IMG]"
                     
@@ -288,26 +313,26 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
                         if img and img.get('alt'): title = img.get('alt')
                     
                     bad_words = ['download', 'scarica', 'pdf', 'clicca', 'leggi', 'programma', 'locandina', 'volantino']
-                    if not title or title.lower() in bad_words: title = clean_filename(href)
+                    if not title or title.lower() in bad_words: title = clean_filename(full_link)
                     if not title: title = f"Documento {type_lbl}"
                     
-                    seen.add(href)
+                    seen.add(full_link)
                     
                     dt = None
                     try:
-                        head = requests.head(href, headers=headers, timeout=5)
+                        head = requests.head(full_link, headers=headers, timeout=5)
                         lmod = head.headers.get('Last-Modified')
                         if lmod: dt = parsedate_to_datetime(lmod).replace(tzinfo=None)
                     except: pass
                     
-                    if not dt: dt = extract_date_from_url(href)
+                    if not dt: dt = extract_date_from_url(full_link)
                     if not dt: dt = datetime(2023, 1, 1) 
                     
                     full_title = f"{icon} {type_lbl} {title}"
-                    if is_recent(dt): send_alerts(full_title, href, source_name)
+                    if is_recent(dt): send_alerts(full_title, full_link, source_name)
                     
                     media_events.append({
-                        "title": full_title, "link": href, "date": dt,
+                        "title": full_title, "link": full_link, "date": dt,
                         "summary": f"Media ({type_lbl}) rilevato su {source_name}.",
                         "source": source_name, "color": color,
                         "event_date": None
@@ -316,28 +341,29 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
             for img in soup.find_all('img'):
                 src = img.get('src')
                 if src and src.lower().endswith(EXTS):
-                    if not src.startswith('http'): src = base_domain + src.lstrip('/')
-                    if src in seen: continue
+                    full_src = urllib.parse.urljoin(base_domain, src.strip())
+                    
+                    if full_src in seen: continue
                     
                     bad_keywords = ['logo', 'icon', 'caiweb', 'stemma', 'facebook', 'whatsapp', 'instagram', 'aquila', 'cropped', 'retina']
-                    if any(keyword in src.lower() for keyword in bad_keywords): continue
+                    if any(keyword in full_src.lower() for keyword in bad_keywords): continue
 
                     title = img.get('alt')
-                    if not title: title = clean_filename(src)
+                    if not title: title = clean_filename(full_src)
                     if not title: title = "Locandina"
                     
-                    seen.add(src)
+                    seen.add(full_src)
                     
-                    dt = extract_date_from_url(src)
+                    dt = extract_date_from_url(full_src)
                     if not dt: dt = datetime(2023, 1, 1)
 
                     full_title = f"🖼️ [IMG] {title}"
                     
                     if is_recent(dt): 
-                        send_alerts(full_title, src, source_name)
+                        send_alerts(full_title, full_src, source_name)
 
                     media_events.append({
-                        "title": full_title, "link": src, "date": dt,
+                        "title": full_title, "link": full_src, "date": dt,
                         "summary": "Immagine rilevata nella pagina.",
                         "source": source_name, "color": color,
                         "event_date": None
