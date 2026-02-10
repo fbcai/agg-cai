@@ -196,30 +196,29 @@ def get_carrara_calendar():
         soup = BeautifulSoup(resp.text, 'html.parser')
         
         # Trova il contenitore principale della lista
-        # (Adatta se necessario, es: soup.find('div', class_='ic-event-list'))
         main_content = soup.find('div', class_='component-content') or soup.find('main') or soup.body
         
         # Trova tutti i link agli eventi. 
-        # Filtriamo per evitare link di sistema (login, stampa, etc)
         links_to_check = set()
         for a in main_content.find_all('a', href=True):
             href = a['href']
-            # Filtro euristico: link interni che sembrano articoli/eventi
-            if "lista-eventi" in href and ".html" in href and "login" not in href:
+            # FILTRO: Deve contenere 'lista-eventi/' (con lo slash) che indica un articolo figlio
+            # e NON deve essere un link di login/stampa/email generico, ma la struttura
+            # /login-utenti-cai/lista-eventi/... è quella corretta degli articoli.
+            if "lista-eventi/" in href and ".html" in href:
                 full_link = urllib.parse.urljoin(base_domain, href.strip())
-                if full_link != base_url: # Non la pagina stessa
+                if full_link != base_url: # Evita la pagina lista stessa
                     links_to_check.add(full_link)
         
-        print(f" -> Trovati {len(links_to_check)} link potenziali. Analisi in corso...")
+        print(f" -> Trovati {len(links_to_check)} link potenziali CAI Carrara. Analisi in corso...")
 
         # 2. ENTRA IN OGNI LINK E CERCA LA DATA
         for link in links_to_check:
             try:
-                time.sleep(0.5) # Gentilezza col server
+                time.sleep(2) # SLOW DOWN: 2 secondi come richiesto
                 sub_resp = requests.get(link, headers=headers, timeout=10)
                 sub_soup = BeautifulSoup(sub_resp.text, 'html.parser')
                 
-                # --- PUNTO CHIAVE: ESTRAZIONE DATA SPECIFICA ---
                 # Cerca <span class="ic-period-startdate">15/02/2026</span>
                 date_span = sub_soup.find('span', class_='ic-period-startdate')
                 
@@ -232,7 +231,7 @@ def get_carrara_calendar():
                     except:
                         pass
                 
-                # Se non trova lo span specifico, prova il metodo generico sul titolo/testo
+                # Fallback: Se non trova lo span, prova nel titolo o contenuto
                 if not event_date:
                     title_tag = sub_soup.find('title')
                     if title_tag:
@@ -240,13 +239,13 @@ def get_carrara_calendar():
 
                 # SE DATA VALIDA E FUTURA (2026+)
                 if event_date and event_date.year >= 2026:
-                    # Estrae titolo (spesso h1 o h2 page-header)
+                    # Estrae titolo (spesso h2 class="item-title" o simile in Joomla)
                     title_h = sub_soup.find('h2', class_='item-title') or sub_soup.find('h1')
                     title = title_h.get_text(strip=True) if title_h else "Evento CAI Carrara"
                     
                     full_title = f"⛰️ {title}"
                     
-                    # Evita duplicati nella lista corrente
+                    # Evita duplicati
                     if any(e['link'] == link for e in events): continue
 
                     events.append({
@@ -590,99 +589,4 @@ for filename, group_data in GROUPS.items():
         # GESTIONE FACEBOOK
         if "facebook.com" in site['url']:
             fb_events = get_facebook_events(site['url'], site['name'], site['color'])
-            for ev in fb_events:
-                # --- FILTRO ANNO 2026 ---
-                if ev['date'].year < 2026: continue
-                # ------------------------
-                
-                current_group_events.append(ev)
-                if ev.get('event_date') and ev['event_date'].date() >= datetime.now().date():
-                    CALENDAR_EVENTS.append(ev)
-            continue # Passa al prossimo sito
-        
-        # GESTIONE RSS STANDARD
-        print(f"Scaricando {site['name']}...")
-        try:
-            feed = feedparser.parse(site['url'])
-            if not feed.entries: continue
-            for entry in feed.entries:
-                if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                    dt = datetime.fromtimestamp(time.mktime(entry.published_parsed))
-                elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
-                    dt = datetime.fromtimestamp(time.mktime(entry.updated_parsed))
-                else: dt = datetime.now()
-                
-                # --- FILTRO ANNO 2026 ---
-                if dt.year < 2026: continue
-                # ------------------------
-
-                if is_recent(dt):
-                    print(f"--> Notifica: {entry.title}")
-                    send_alerts(entry.title, entry.link, site['name'])
-                
-                summ = clean_html(entry.get("summary", ""))
-                
-                text_to_scan = entry.title + " " + summ
-                event_date = extract_event_date_from_text(text_to_scan)
-                
-                if len(summ) > 250: summ = summ[:250] + "..."
-                
-                ev = {
-                    "title": entry.title, "link": entry.link, "date": dt, 
-                    "summary": summ, "source": site["name"], "color": site["color"],
-                    "event_date": event_date
-                }
-                current_group_events.append(ev)
-                
-                # FIX EVENTI FEBBRAIO: Uso .date() per ignorare l'ora e includere oggi
-                if event_date and event_date.date() >= datetime.now().date():
-                    CALENDAR_EVENTS.append(ev)
-
-        except Exception as e: print(f"Errore {site['name']}: {e}")
-
-    # B. SCRAPING SPECIFICI
-    site_names_in_group = [s['name'] for s in group_data['sites']]
-    extra_events_list = []
-    
-    if "CAI Sansepolcro" in site_names_in_group:
-        extra_events_list.extend(get_sansepolcro_media())
-    if "CAI Grosseto" in site_names_in_group:
-        extra_events_list.extend(get_grosseto_media())
-    if "CAI Carrara" in site_names_in_group:
-        extra_events_list.extend(get_carrara_calendar())
-
-    for ev in extra_events_list:
-        # --- FILTRO ANNO 2026 ---
-        if ev['date'].year < 2026: continue
-        # ------------------------
-
-        if not ev.get('event_date'):
-            extracted_date = extract_event_date_from_text(ev['title'])
-            
-            if extracted_date:
-                ev['event_date'] = extracted_date
-            elif ev['date'] > datetime.now():
-                ev['event_date'] = ev['date']
-            else:
-                ev['event_date'] = None
-            
-        current_group_events.append(ev)
-        
-        # FIX EVENTI FEBBRAIO: Uso .date() per ignorare l'ora e includere oggi
-        if ev.get('event_date') and ev['event_date'].date() >= datetime.now().date():
-             CALENDAR_EVENTS.append(ev)
-
-    # C. Salva Gruppo
-    current_group_events.sort(key=lambda x: x["date"], reverse=True)
-    write_html_file(filename, group_data['title'], current_group_events)
-    GLOBAL_EVENTS.extend(current_group_events)
-
-# Pagina Generale
-print(f"\n--- Generazione Pagina Generale ---")
-GLOBAL_EVENTS.sort(key=lambda x: x["date"], reverse=True)
-write_html_file("tutto.html", "Tutti gli Eventi CAI (Aggregati)", GLOBAL_EVENTS)
-
-# Pagina Calendario
-print(f"\n--- Generazione Calendario Futuro ---")
-CALENDAR_EVENTS.sort(key=lambda x: x["event_date"])
-write_html_file("calendario.html", "📅 Calendario Prossimi Eventi CAI TOSCANA", CALENDAR_EVENTS, is_calendar=True)
+            for ev in fb_
