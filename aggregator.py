@@ -185,7 +185,7 @@ def get_garfagnana_media():
     urls = ["https://organizzazione.cai.it/sez-castelnuovo-garfagnana/news/"]
     return scrape_generic_media(urls, "CAI Castelnuovo G.", "https://organizzazione.cai.it", color="#2980b9")
 
-# --- SCRAPER CAI BARGA (GITE) ---
+# --- NUOVO SCRAPER CAI BARGA ---
 def get_barga_activities():
     url = "https://www.caibarga.it/Gite.htm"
     base_domain = "https://www.caibarga.it"
@@ -199,24 +199,32 @@ def get_barga_activities():
         resp = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(resp.text, 'html.parser')
         
+        # Analizza righe (tabelle o paragrafi) che contengono "Programma"
         for row in soup.find_all(['tr', 'p', 'li']):
             text = row.get_text(" ", strip=True)
             
             if "Programma" in text:
+                # Cerca il link che contiene la parola "Programma" (case insensitive)
                 link_tag = row.find('a', string=re.compile("Programma", re.IGNORECASE))
+                
+                # Se non trova il link con quel testo specifico, prova a prendere il primo link della riga
                 if not link_tag:
                     link_tag = row.find('a')
                 
                 if not link_tag: continue
+                
                 href = link_tag.get('href')
                 if not href: continue
                 
                 full_link = urllib.parse.urljoin(base_domain, href)
+                
+                # Data
                 event_date = extract_event_date_from_text(text)
                 
                 if event_date and event_date.year >= 2026:
+                    # Titolo: Pulisci il testo rimuovendo "Programma" e la data
                     clean_title = text.replace("Programma", "").strip()
-                    clean_title = re.sub(r'\d{1,2}[/-]\d{1,2}', '', clean_title) 
+                    clean_title = re.sub(r'\d{1,2}[/-]\d{1,2}', '', clean_title) # Toglie date numeriche
                     clean_title = clean_title.strip("- ").strip()
                     
                     if len(clean_title) < 3: clean_title = "Gita Sociale CAI Barga"
@@ -308,6 +316,7 @@ def get_carrara_calendar():
                         "event_date": event_date
                     })
             except Exception as e:
+                print(f"   ! Errore su link {link}: {e}")
                 continue
 
     except Exception as e:
@@ -339,19 +348,14 @@ def get_garfagnana_events():
                     text = page.extract_text()
                     if not text: continue
                     
-                    # Filtra linee vuote per ottenere solo righe con testo
-                    raw_lines = text.split('\n')
-                    lines = [line.strip() for line in raw_lines if line.strip()]
-                    
-                    if not lines: continue
-
-                    # 1. Prima riga testuale per la data (Indice 0)
-                    event_date = extract_event_date_from_text(lines[0])
+                    lines = text.split('\n')
+                    header_text = " ".join(lines[:5])
+                    event_date = extract_event_date_from_text(header_text)
                     
                     if event_date and event_date.year >= 2026:
-                        # 2. Seconda riga testuale per il titolo (Indice 1)
+                        # TITOLO: Prende SOLO la seconda riga (indice 1)
                         if len(lines) > 1:
-                            title = lines[1]
+                            title = lines[1].strip()
                         else:
                             title = "Evento CAI Garfagnana"
                         
@@ -550,7 +554,7 @@ GROUPS = {
             {"url": "https://www.cailucca.it/feed/", "name": "CAI Lucca", "color": "#34495e"},
             {"url": "https://caipontremoli.it/feed/", "name": "CAI Pontremoli", "color": "#9b59b6"},
             {"url": "https://www.caifivizzano.it/feed/", "name": "CAI Fivizzano", "color": "#27ae60"},
-            # CAI BARGA GESTITO DALLO SCRAPER SPECIFICO
+            # CAI BARGA GESTITO DALLO SCRAPER SPECIFICO, QUI SOLO PLACEHOLDER
             {"url": "https://www.caibarga.it/", "name": "CAI Barga", "color": "#d35400"},
             {"url": "https://www.caimaresca.it/feed/", "name": "CAI Maresca", "color": "#16a085"},
             {"url": "https://www.caicastelnuovogarfagnana.org/feed/", "name": "CAI Castelnuovo G.", "color": "#2980b9"},
