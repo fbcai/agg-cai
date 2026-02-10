@@ -180,85 +180,99 @@ def get_grosseto_media():
     return scrape_generic_media(urls, "CAI Grosseto", "https://caigrosseto.it", color="#16a085")
 
 def get_carrara_calendar():
-    """Scraper specifico per la LISTA EVENTI di CAI Carrara"""
-    url = "https://www.caicarrara.it/login-utenti-cai/lista-eventi.html"
-    base_domain = "https://www.caicarrara.it" 
+    """Scraper DEEP per CAI Carrara: scarica lista poi entra in ogni link."""
+    base_url = "https://www.caicarrara.it/login-utenti-cai/lista-eventi.html"
+    base_domain = "https://www.caicarrara.it"
     source_name = "CAI Carrara"
-    color = "#7f8c8d" 
+    color = "#7f8c8d"
     events = []
     
-    print(f"Scraping Lista Eventi {source_name}...")
+    print(f"Scraping DEEP {source_name}...")
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (compatible; CAI-Aggregator/1.0)'}
-        resp = requests.get(url, headers=headers, timeout=15)
+        
+        # 1. SCARICA LA LISTA
+        resp = requests.get(base_url, headers=headers, timeout=15)
         soup = BeautifulSoup(resp.text, 'html.parser')
         
-        # Cerca nel contenuto principale
-        content = soup.find('div', class_='component-content') or soup.find('main') or soup.body
-        seen_links = set()
+        # Trova il contenitore principale della lista
+        # (Adatta se necessario, es: soup.find('div', class_='ic-event-list'))
+        main_content = soup.find('div', class_='component-content') or soup.find('main') or soup.body
+        
+        # Trova tutti i link agli eventi. 
+        # Filtriamo per evitare link di sistema (login, stampa, etc)
+        links_to_check = set()
+        for a in main_content.find_all('a', href=True):
+            href = a['href']
+            # Filtro euristico: link interni che sembrano articoli/eventi
+            if "lista-eventi" in href and ".html" in href and "login" not in href:
+                full_link = urllib.parse.urljoin(base_domain, href.strip())
+                if full_link != base_url: # Non la pagina stessa
+                    links_to_check.add(full_link)
+        
+        print(f" -> Trovati {len(links_to_check)} link potenziali. Analisi in corso...")
 
-        # Scorre tutti i tag che potrebbero contenere testo
-        for tag in content.find_all(['div', 'tr', 'p', 'li', 'span']):
-            text = tag.get_text(" ", strip=True)
-            
-            # --- REGEX MIGLIORATA PER CARRARA ---
-            # Cerca "Data" seguita da qualsiasi cosa (.*?) poi cifre/cifre/cifre
-            # Pattern: Data + (opzionali spazi/due punti/testo) + GG + (sep) + MM + (sep) + AAAA
-            match = re.search(r'Data.*?(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})', text, re.IGNORECASE)
-            
-            if match:
-                try:
-                    # Estrazione precisa dai gruppi della Regex
-                    day = int(match.group(1))
-                    month = int(match.group(2))
-                    year = int(match.group(3))
-                    event_date = datetime(year, month, day)
-                except ValueError:
-                    continue # Data non valida (es. mese 13)
+        # 2. ENTRA IN OGNI LINK E CERCA LA DATA
+        for link in links_to_check:
+            try:
+                time.sleep(0.5) # Gentilezza col server
+                sub_resp = requests.get(link, headers=headers, timeout=10)
+                sub_soup = BeautifulSoup(sub_resp.text, 'html.parser')
                 
-                # FILTRO 2026
-                if event_date.year >= 2026:
+                # --- PUNTO CHIAVE: ESTRAZIONE DATA SPECIFICA ---
+                # Cerca <span class="ic-period-startdate">15/02/2026</span>
+                date_span = sub_soup.find('span', class_='ic-period-startdate')
+                
+                event_date = None
+                if date_span:
+                    date_text = date_span.get_text(strip=True)
+                    try:
+                        # Parsing data dd/mm/yyyy
+                        event_date = datetime.strptime(date_text, "%d/%m/%Y")
+                    except:
+                        pass
+                
+                # Se non trova lo span specifico, prova il metodo generico sul titolo/testo
+                if not event_date:
+                    title_tag = sub_soup.find('title')
+                    if title_tag:
+                        event_date = extract_event_date_from_text(title_tag.get_text())
+
+                # SE DATA VALIDA E FUTURA (2026+)
+                if event_date and event_date.year >= 2026:
+                    # Estrae titolo (spesso h1 o h2 page-header)
+                    title_h = sub_soup.find('h2', class_='item-title') or sub_soup.find('h1')
+                    title = title_h.get_text(strip=True) if title_h else "Evento CAI Carrara"
                     
-                    # RICERCA LINK (Risale l'albero se necessario)
-                    link_tag = tag.find('a')
-                    if not link_tag and tag.parent:
-                        link_tag = tag.parent.find('a')
-                    if not link_tag and tag.parent.parent:
-                        link_tag = tag.parent.parent.find('a')
+                    full_title = f"⛰️ {title}"
+                    
+                    # Evita duplicati nella lista corrente
+                    if any(e['link'] == link for e in events): continue
 
-                    if link_tag and link_tag.get('href'):
-                        raw_link = link_tag.get('href').strip()
-                        link = urllib.parse.urljoin(base_domain, raw_link)
-                        
-                        # Titolo: prova a prendere il testo del link, altrimenti pulisci il testo della data
-                        title_text = link_tag.get_text(strip=True)
-                        if not title_text or len(title_text) < 5 or "leggi tutto" in title_text.lower():
-                            # Se il link ha testo generico, cerca il titolo nel parent o nel testo grezzo
-                            clean_text = re.sub(r'Data.*?(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})', '', text, flags=re.IGNORECASE)
-                            title_text = clean_text[:100].strip()
-                        
-                        full_title = f"⛰️ {title_text}"
+                    events.append({
+                        "title": full_title,
+                        "link": link,
+                        "date": datetime.now(), 
+                        "summary": f"Data evento: {event_date.strftime('%d/%m/%Y')}",
+                        "source": source_name,
+                        "color": color,
+                        "event_date": event_date
+                    })
+                    print(f"   + Trovato: {full_title} ({event_date.date()})")
+            
+            except Exception as e:
+                print(f"   ! Errore su link {link}: {e}")
+                continue
 
-                        if link in seen_links: continue
-                        seen_links.add(link)
-
-                        events.append({
-                            "title": full_title,
-                            "link": link,
-                            "date": datetime.now(), 
-                            "summary": f"Evento CAI Carrara del {day}/{month}/{year}",
-                            "source": source_name,
-                            "color": color,
-                            "event_date": event_date
-                        })
     except Exception as e:
-        print(f"Errore scraping Carrara: {e}")
+        print(f"Errore scraping principale Carrara: {e}")
         
     return events
 
 def get_facebook_events(page_url, source_name, color):
     print(f"Scraping Facebook per {source_name}...")
     fb_events = []
+    
     try:
         if "profile.php" in page_url:
             page_id = page_url.split('id=')[-1]
@@ -280,6 +294,7 @@ def get_facebook_events(page_url, source_name, color):
                 
                 title = " ".join(post_text.split()[:10]) + "..." if post_text else "Post Facebook"
                 full_title = f"📘 [FB] {title}"
+                
                 event_date = extract_event_date_from_text(post_text)
 
                 if is_recent(post_time):
@@ -294,10 +309,13 @@ def get_facebook_events(page_url, source_name, color):
                     "color": color,
                     "event_date": event_date
                 })
-            except Exception as e: continue     
+            except Exception as e:
+                continue
+                
     except Exception as e:
         print(f"Errore scraping Facebook {source_name} ({page_id}): {e}")
         pass
+        
     return fb_events
 
 def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
