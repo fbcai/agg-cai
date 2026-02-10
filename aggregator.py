@@ -99,7 +99,7 @@ def format_date_friendly(dt):
 def extract_event_date_from_text(text):
     """
     Cerca di indovinare la data dell'evento dal testo.
-    Gestisce range tipo "4/5 febbraio" prendendo il 4 febbraio.
+    Gestisce range tipo "4/5 febbraio" o "4 al 5 febbraio" prendendo il 4.
     """
     if not text: return None
     text = text.lower()
@@ -122,21 +122,35 @@ def extract_event_date_from_text(text):
             return found_date
         except: pass
 
-    # 2. PRIORITÀ MEDIA: Formato Testuale (gestisce range "4/5 febbraio")
+    # 2. PRIORITÀ MEDIA: Formato Testuale
     for m_name, m_num in months.items():
-        # Regex che cerca: Giorno + (opzionale /Giorno o -Giorno) + Mese
-        pattern = r'(\d{1,2})(?:[/-]\d{1,2})?\s+(?:di\s+)?' + m_name
-        match_txt = re.search(pattern, text)
-        if match_txt:
+        
+        # A. Cerca PRIMA i range (es. "4 al 5 febbraio", "4-5 febbraio", "4 e 5 febbraio")
+        # Regex: numero + spazi + (separatore: - / e al) + spazi + numero + spazi + mese
+        range_pattern = r'(\d{1,2})\s*(?:[-/e]|al|&)\s*(?:\d{1,2})\s+(?:di\s+)?' + m_name
+        match_range = re.search(range_pattern, text)
+        
+        if match_range:
             try:
-                d = int(match_txt.group(1)) # Prende sempre il primo giorno
+                d = int(match_range.group(1)) # Prende il PRIMO giorno (X)
                 y = today.year
                 temp_date = datetime(y, m_num, d)
-                
-                # Se la data è passata da molto, assumi anno prossimo
                 if temp_date < today - timedelta(days=60):
                     y += 1
-                
+                found_date = datetime(y, m_num, d)
+                return found_date
+            except: pass
+
+        # B. Se non è un range, cerca data singola (es. "5 febbraio")
+        single_pattern = r'(\d{1,2})\s+(?:di\s+)?' + m_name
+        match_single = re.search(single_pattern, text)
+        if match_single:
+            try:
+                d = int(match_single.group(1))
+                y = today.year
+                temp_date = datetime(y, m_num, d)
+                if temp_date < today - timedelta(days=60):
+                    y += 1
                 found_date = datetime(y, m_num, d)
                 return found_date
             except: pass
@@ -174,7 +188,6 @@ def get_grosseto_media():
 
 def get_carrara_calendar():
     """Scraper specifico per la LISTA EVENTI di CAI Carrara"""
-    # NUOVO URL CORRETTO
     url = "https://www.caicarrara.it/login-utenti-cai/lista-eventi.html"
     base_domain = "https://www.caicarrara.it" 
     source_name = "CAI Carrara"
@@ -187,17 +200,13 @@ def get_carrara_calendar():
         resp = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(resp.text, 'html.parser')
         
-        # Cerca nel contenitore principale per evitare menu e footer
         content = soup.find('div', class_='component-content') or soup.find('main') or soup.body
-        
-        # In Joomla/Siti simili, gli eventi sono spesso in blocchi.
-        # Iteriamo su div, tr, p alla ricerca del pattern "Data"
         seen_links = set()
 
         for tag in content.find_all(['div', 'tr', 'p', 'li']):
             text = tag.get_text(" ", strip=True)
             
-            # Cerca data specifica "Data: gg/mm/aaaa" (Case Insensitive)
+            # Cerca data specifica "Data: gg/mm/aaaa"
             specific_match = re.search(r'Data\s*:?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{4})', text, re.IGNORECASE)
             
             if specific_match:
@@ -206,30 +215,24 @@ def get_carrara_calendar():
                     d, m, y = map(int, d_str.split('/'))
                     event_date = datetime(y, m, d)
                 except:
-                    continue # Se la data non è valida, salta
+                    continue
                 
                 # FILTRO 2026
                 if event_date.year >= 2026:
-                    
-                    # Cerca il link (<a>) più vicino all'interno dello stesso blocco
                     link_tag = tag.find('a')
-                    # Se non lo trova nel tag stesso, prova nel genitore (spesso la data è dentro un <p> dentro un <div> che ha il link)
                     if not link_tag and tag.parent:
                         link_tag = tag.parent.find('a')
 
                     if link_tag and link_tag.get('href'):
                         raw_link = link_tag.get('href').strip()
-                        # IMPORTANTE: Costruisce il link assoluto correttamente
                         link = urllib.parse.urljoin(base_domain, raw_link)
                         
-                        # Titolo: testo del link o parte del testo del blocco
                         title_text = link_tag.get_text(strip=True)
                         if not title_text or len(title_text) < 5:
                             title_text = text.replace("Data", "").replace(d_str, "")[:100]
                         
                         full_title = f"⛰️ {title_text.strip()}"
 
-                        # Evita duplicati
                         if link in seen_links: continue
                         seen_links.add(link)
 
