@@ -123,10 +123,8 @@ def extract_event_date_from_text(text):
         except: pass
 
     # 2. PRIORITÀ MEDIA: Formato Testuale (gestisce range "4/5 febbraio")
-    # Spostato PRIMA del controllo dd/mm per evitare falsi positivi (4/5 -> 4 Maggio)
     for m_name, m_num in months.items():
         # Regex che cerca: Giorno + (opzionale /Giorno o -Giorno) + Mese
-        # Es: "4 febbraio", "4/5 febbraio", "4-5 febbraio"
         pattern = r'(\d{1,2})(?:[/-]\d{1,2})?\s+(?:di\s+)?' + m_name
         match_txt = re.search(pattern, text)
         if match_txt:
@@ -144,12 +142,10 @@ def extract_event_date_from_text(text):
             except: pass
 
     # 3. PRIORITÀ BASSA: Formato breve dd/mm
-    # Eseguito solo se non abbiamo trovato un mese testuale
     match_short = re.search(r'(\d{1,2})[/-](\d{1,2})', text)
     if match_short:
         try:
             d, m = int(match_short.group(1)), int(match_short.group(2))
-            # Controllo validità mese
             if m > 12: return None 
             
             y = today.year
@@ -177,24 +173,31 @@ def get_grosseto_media():
     return scrape_generic_media(urls, "CAI Grosseto", "https://caigrosseto.it", color="#16a085")
 
 def get_carrara_calendar():
-    url = "https://www.caicarrara.it/calendario-cai-carrara/calendario-generale-cai/calendario-generale-cai-carrara/"
+    """Scraper specifico per la LISTA EVENTI di CAI Carrara"""
+    # NUOVO URL CORRETTO
+    url = "https://www.caicarrara.it/login-utenti-cai/lista-eventi.html"
     base_domain = "https://www.caicarrara.it" 
-    source_name = "CAI Carrara Cal."
+    source_name = "CAI Carrara"
     color = "#7f8c8d" 
     events = []
     
-    print(f"Scraping Calendario {source_name}...")
+    print(f"Scraping Lista Eventi {source_name}...")
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (compatible; CAI-Aggregator/1.0)'}
         resp = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(resp.text, 'html.parser')
         
-        content = soup.find('div', class_='entry-content') or soup.body
+        # Cerca nel contenitore principale per evitare menu e footer
+        content = soup.find('div', class_='component-content') or soup.find('main') or soup.body
         
-        for tag in content.find_all(['tr', 'li', 'p', 'div']):
+        # In Joomla/Siti simili, gli eventi sono spesso in blocchi.
+        # Iteriamo su div, tr, p alla ricerca del pattern "Data"
+        seen_links = set()
+
+        for tag in content.find_all(['div', 'tr', 'p', 'li']):
             text = tag.get_text(" ", strip=True)
             
-            # Cerca data specifica "Data: gg/mm/aaaa"
+            # Cerca data specifica "Data: gg/mm/aaaa" (Case Insensitive)
             specific_match = re.search(r'Data\s*:?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{4})', text, re.IGNORECASE)
             
             if specific_match:
@@ -203,32 +206,42 @@ def get_carrara_calendar():
                     d, m, y = map(int, d_str.split('/'))
                     event_date = datetime(y, m, d)
                 except:
-                    event_date = extract_event_date_from_text(text)
-            else:
-                event_date = extract_event_date_from_text(text)
-            
-            if event_date and event_date.year >= 2026:
-                link_tag = tag.find('a')
-                if link_tag and link_tag.get('href'):
-                    raw_link = link_tag.get('href').strip()
-                    link = urllib.parse.urljoin(base_domain, raw_link)
-                else:
-                    link = url 
+                    continue # Se la data non è valida, salta
                 
-                title = text[:150] + "..." if len(text) > 150 else text
-                full_title = f"📅 {title}"
+                # FILTRO 2026
+                if event_date.year >= 2026:
+                    
+                    # Cerca il link (<a>) più vicino all'interno dello stesso blocco
+                    link_tag = tag.find('a')
+                    # Se non lo trova nel tag stesso, prova nel genitore (spesso la data è dentro un <p> dentro un <div> che ha il link)
+                    if not link_tag and tag.parent:
+                        link_tag = tag.parent.find('a')
 
-                if any(e['title'] == full_title for e in events): continue
+                    if link_tag and link_tag.get('href'):
+                        raw_link = link_tag.get('href').strip()
+                        # IMPORTANTE: Costruisce il link assoluto correttamente
+                        link = urllib.parse.urljoin(base_domain, raw_link)
+                        
+                        # Titolo: testo del link o parte del testo del blocco
+                        title_text = link_tag.get_text(strip=True)
+                        if not title_text or len(title_text) < 5:
+                            title_text = text.replace("Data", "").replace(d_str, "")[:100]
+                        
+                        full_title = f"⛰️ {title_text.strip()}"
 
-                events.append({
-                    "title": full_title,
-                    "link": link,
-                    "date": datetime.now(), 
-                    "summary": "Evento estratto dal calendario generale CAI Carrara",
-                    "source": source_name,
-                    "color": color,
-                    "event_date": event_date
-                })
+                        # Evita duplicati
+                        if link in seen_links: continue
+                        seen_links.add(link)
+
+                        events.append({
+                            "title": full_title,
+                            "link": link,
+                            "date": datetime.now(), 
+                            "summary": f"Evento CAI Carrara del {d_str}",
+                            "source": source_name,
+                            "color": color,
+                            "event_date": event_date
+                        })
     except Exception as e:
         print(f"Errore scraping Carrara: {e}")
         
@@ -265,6 +278,393 @@ def get_facebook_events(page_url, source_name, color):
                 if is_recent(post_time):
                     send_alerts(full_title, post_url, source_name)
                 
+                fb_events.append({
+                    "title": full_title,
+                    "link": post_url,
+                    "date": post_time,
+                    "summary": post_text[:300] + "...",
+                    "source": source_name,
+                    "color": color,
+                    "event_date": event_date
+                })
+            except Exception as e:
+                continue
+                
+    except Exception as e:
+        print(f"Errore scraping Facebook {source_name} ({page_id}): {e}")
+        pass
+        
+    return fb_events
+
+def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
+    EXTS = ('.pdf', '.jpg', '.jpeg', '.png', '.webp')
+    media_events = []
+    seen = set()
+    
+    for url in urls:
+        print(f"Scraping media da {source_name}: {url}...")
+        try:
+            headers = {'User-Agent': 'Mozilla/5.0 (compatible; CAI-Aggregator/1.0)'}
+            resp = requests.get(url, headers=headers, timeout=15)
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            
+            for link in soup.find_all('a'):
+                href = link.get('href')
+                if href and href.lower().endswith(EXTS):
+                    full_link = urllib.parse.urljoin(base_domain, href.strip())
+                    
+                    if full_link in seen: continue
+                    if "aquila" in full_link.lower() or "cropped" in full_link.lower(): continue
+
+                    is_pdf = full_link.lower().endswith('.pdf')
+                    icon = "📄" if is_pdf else "🖼️"
+                    type_lbl = "[PDF]" if is_pdf else "[IMG]"
+                    
+                    title = link.get_text(strip=True)
+                    if not title:
+                        img = link.find('img')
+                        if img and img.get('alt'): title = img.get('alt')
+                    
+                    bad_words = ['download', 'scarica', 'pdf', 'clicca', 'leggi', 'programma', 'locandina', 'volantino']
+                    if not title or title.lower() in bad_words: title = clean_filename(full_link)
+                    if not title: title = f"Documento {type_lbl}"
+                    
+                    seen.add(full_link)
+                    
+                    dt = None
+                    try:
+                        head = requests.head(full_link, headers=headers, timeout=5)
+                        lmod = head.headers.get('Last-Modified')
+                        if lmod: dt = parsedate_to_datetime(lmod).replace(tzinfo=None)
+                    except: pass
+                    
+                    if not dt: dt = extract_date_from_url(full_link)
+                    if not dt: dt = datetime(2023, 1, 1) 
+                    
+                    full_title = f"{icon} {type_lbl} {title}"
+                    if is_recent(dt): send_alerts(full_title, full_link, source_name)
+                    
+                    media_events.append({
+                        "title": full_title, "link": full_link, "date": dt,
+                        "summary": f"Media ({type_lbl}) rilevato su {source_name}.",
+                        "source": source_name, "color": color,
+                        "event_date": None
+                    })
+
+            for img in soup.find_all('img'):
+                src = img.get('src')
+                if src and src.lower().endswith(EXTS):
+                    full_src = urllib.parse.urljoin(base_domain, src.strip())
+                    
+                    if full_src in seen: continue
+                    
+                    bad_keywords = ['logo', 'icon', 'caiweb', 'stemma', 'facebook', 'whatsapp', 'instagram', 'aquila', 'cropped', 'retina']
+                    if any(keyword in full_src.lower() for keyword in bad_keywords): continue
+
+                    title = img.get('alt')
+                    if not title: title = clean_filename(full_src)
+                    if not title: title = "Locandina"
+                    
+                    seen.add(full_src)
+                    
+                    dt = extract_date_from_url(full_src)
+                    if not dt: dt = datetime(2023, 1, 1)
+
+                    full_title = f"🖼️ [IMG] {title}"
+                    
+                    if is_recent(dt): 
+                        send_alerts(full_title, full_src, source_name)
+
+                    media_events.append({
+                        "title": full_title, "link": full_src, "date": dt,
+                        "summary": "Immagine rilevata nella pagina.",
+                        "source": source_name, "color": color,
+                        "event_date": None
+                    })
+
+        except Exception as e: print(f"Err scraping {url}: {e}")
+    return media_events
+
+# --- CONFIGURAZIONE GRUPPI ---
+GROUPS = {
+    "index.html": {
+        "title": "Toscana SudEst (Arezzo, Siena, Grosseto, Sansepolcro, Stia, Valdarno Sup.)",
+        "sites": [
+            {"url": "https://www.caiarezzo.it/feed/", "name": "CAI Arezzo", "color": "#e74c3c"},
+            {"url": "https://caivaldarnosuperiore.it/feed/", "name": "CAI Valdarno Sup.", "color": "#2ecc71"},
+            {"url": "https://caistia.it/feed/", "name": "CAI Stia", "color": "#f1c40f"},
+            {"url": "https://www.caisansepolcro.it/feed/", "name": "CAI Sansepolcro", "color": "#3498db"},
+            {"url": "https://organizzazione.cai.it/sez-siena/feed/", "name": "CAI Siena", "color": "#9b59b6"},
+            {"url": "https://www.caigrosseto.it/feed/", "name": "CAI Grosseto", "color": "#16a085"},
+            {"url": "https://www.facebook.com/groups/1487615384876547", "name": "FB CAI Grosseto", "color": "#16a085"}
+        ]
+    },
+    "costa.html": {
+        "title": "Toscana Ovest (Pisa, Livorno, Viareggio, Massa, Carrara, Pietrasanta, Forte, Pontedera)",
+        "sites": [
+            {"url": "https://www.caipisa.it/feed/", "name": "CAI Pisa", "color": "#e67e22"},
+            {"url": "https://organizzazione.cai.it/sez-livorno/feed/", "name": "CAI Livorno", "color": "#9b59b6"},
+            {"url": "https://caiviareggio.it/feed/", "name": "CAI Viareggio", "color": "#3b5998"},
+            {"url": "https://www.caifortedeimarmi.it/feed/", "name": "CAI Forte d. Marmi", "color": "#3498db"}, 
+            {"url": "https://www.caipontedera.it/feed/", "name": "CAI Pontedera", "color": "#1abc9c"},
+            {"url": "https://www.caicarrara.it/feed/", "name": "CAI Carrara", "color": "#7f8c8d"},
+            {"url": "https://www.caipietrasanta.it/feed/", "name": "CAI Pietrasanta", "color": "#d35400"},
+            {"url": "https://www.caimassa.it/feed/", "name": "CAI Massa", "color": "#2c3e50"},
+            {"url": "https://www.facebook.com/cailivorno", "name": "FB CAI Livorno", "color": "#3b5998"},
+            {"url": "https://www.facebook.com/CAIViareggio", "name": "FB CAI Viareggio", "color": "#3b5558"},
+            {"url": "https://www.facebook.com/CaiPietrasanta/", "name": "FB CAI Pietrasanta", "color": "#d35400"},
+            {"url": "https://www.facebook.com/cai.fortedeimarmi", "name": "FB CAI Forte", "color": "#3498db"}
+        ]
+    },
+    "nord.html": {
+        "title": "Toscana Nord (Pistoia, Lucca, Pontremoli, Fivizzano, Barga, Maresca, Castelnuovo, Pescia)",
+        "sites": [
+            {"url": "https://www.caipistoia.org/feed/", "name": "CAI Pistoia", "color": "#8e44ad"},
+            {"url": "https://www.cailucca.it/feed/", "name": "CAI Lucca", "color": "#34495e"},
+            {"url": "https://caipontremoli.it/feed/", "name": "CAI Pontremoli", "color": "#9b59b6"},
+            {"url": "https://www.caifivizzano.it/feed/", "name": "CAI Fivizzano", "color": "#27ae60"},
+            {"url": "https://www.caibarga.it/feed/", "name": "CAI Barga", "color": "#d35400"},
+            {"url": "https://www.caimaresca.it/feed/", "name": "CAI Maresca", "color": "#16a085"},
+            {"url": "https://www.caicastelnuovogarfagnana.org/feed/", "name": "CAI Castelnuovo G.", "color": "#2980b9"},
+            {"url": "https://www.caipescia.it/feed/", "name": "CAI Pescia", "color": "#e67e22"},
+            {"url": "https://www.facebook.com/groups/www.caipescia.it", "name": "FB CAI Pescia", "color": "#e67e22"},
+            {"url": "https://www.facebook.com/cai.barga", "name": "FB CAI Barga", "color": "#d35400"},
+            {"url": "https://www.facebook.com/profile.php?id=100093533902575", "name": "FB CAI Garfagnana", "color": "#2980b9"},
+            {"url": "https://www.facebook.com/CaisezionediMassa", "name": "FB CAI Massa", "color": "#2c3e50"}
+         ]
+    },
+    "firenze.html": {
+        "title": "Area Fiorentina (Firenze, Sesto, Scandicci, Prato, Pontassieve, Valdarno Inf.)",
+        "sites": [
+            {"url": "https://www.caifirenze.it/feed/", "name": "CAI Firenze", "color": "#c0392b"},
+            {"url": "https://www.caisesto.it/feed/", "name": "CAI Sesto F.", "color": "#2980b9"},
+            {"url": "https://www.caipontassieve.it/feed/", "name": "CAI Pontassieve", "color": "#3b5998"},
+            {"url": "https://www.caiprato.it/feed/", "name": "CAI Prato", "color": "#d35400"},
+            {"url": "https://www.caivaldarnoinferiore.it/feed/", "name": "CAI Valdarno Inf.", "color": "#1abc9c"},
+            {"url": "https://www.caiscandicci.it/feed/", "name": "CAI Scandicci", "color": "#16a085"}
+        ]
+    }
+}
+
+# --- GENERAZIONE HTML E NAVIGAZIONE ---
+def get_nav_html(current_page):
+    nav = '<nav style="margin-bottom: 30px; text-align: center; line-height: 2.5;">'
+    
+    style_cal = 'display: inline-block; text-decoration: none; margin: 5px; padding: 8px 15px; border-radius: 20px; font-weight: bold; border: 2px solid #e67e22;'
+    if current_page == "calendario.html": style_cal += 'background-color: #e67e22; color: white;'
+    else: style_cal += 'background-color: white; color: #e67e22;'
+    nav += f'<a href="calendario.html" style="{style_cal}">📅 CALENDARIO FUTURO</a> '
+
+    style_all = 'display: inline-block; text-decoration: none; margin: 5px; padding: 8px 15px; border-radius: 20px; font-weight: bold; border: 2px solid #333;'
+    if current_page == "tutto.html": style_all += 'background-color: #333; color: white;'
+    else: style_all += 'background-color: white; color: #333;'
+    nav += f'<a href="tutto.html" style="{style_all}">🌍 TUTTE LE SEZIONI TOSCANA</a> '
+
+    for filename, data in GROUPS.items():
+        style = 'display: inline-block; text-decoration: none; margin: 5px; padding: 8px 15px; border-radius: 20px; font-weight: bold;'
+        if filename == current_page: style += 'background-color: #2563eb; color: white;'
+        else: style += 'background-color: #e5e7eb; color: #333;'
+        short_title = data['title'].split('(')[0].strip()
+        nav += f'<a href="{filename}" style="{style}">{short_title}</a>'
+    nav += '</nav>'
+    return nav
+
+def write_html_file(filename, title, events, is_calendar=False):
+    nav_html = get_nav_html(filename)
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="it">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{title}</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+        <style>
+            body {{ font-family: 'Inter', sans-serif; background-color: #f3f4f6; color: #1f2937; margin: 0; padding: 20px; }}
+            .container {{ max-width: 900px; margin: 0 auto; }}
+            header {{ text-align: center; margin-bottom: 20px; }}
+            h1 {{ color: #111827; margin-bottom: 5px; font-size: 1.8rem; }}
+            .meta {{ color: #6b7280; font-size: 0.9em; margin-bottom: 20px; }}
+            .card {{ background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); border-left: 6px solid #ccc; transition: transform 0.2s; }}
+            .card:hover {{ transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }}
+            .badge {{ display: inline-block; padding: 4px 12px; border-radius: 9999px; color: white; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }}
+            .date {{ float: right; color: #6b7280; font-size: 0.875rem; }}
+            /* HEADER DATA A TUTTA LARGHEZZA */
+            .date-header {{ 
+                background: #2c3e50; 
+                color: white; 
+                padding: 10px 20px; 
+                border-radius: 8px; 
+                margin: 30px 0 15px 0; 
+                font-size: 1.2rem; 
+                display: block; 
+                width: 100%;
+                box-sizing: border-box;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+            }}
+            .date-header::before {{ content: '🗓'; margin-right: 10px; }}
+            h2 {{ margin-top: 12px; margin-bottom: 8px; font-size: 1.25rem; }}
+            h2 a {{ text-decoration: none; color: #111827; }}
+            h2 a:hover {{ color: #2563eb; }}
+            .desc {{ color: #4b5563; line-height: 1.5; font-size: 0.95rem; margin-bottom: 16px; }}
+            .read-more {{ display: inline-block; color: #2563eb; font-weight: 600; text-decoration: none; }}
+            .read-more:hover {{ text-decoration: underline; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            {nav_html}
+            <header>
+                <h1>{title}</h1>
+                <div class="meta">Ultimo aggiornamento: {datetime.now().strftime('%d/%m/%Y alle %H:%M')}</div>
+            </header>
+    """
+    
+    if not events:
+        html += "<p style='text-align:center;'>Nessun evento futuro trovato (o data non riconosciuta).</p>"
+    
+    last_header_date = None
+
+    for event in events:
+        if is_calendar:
+            current_date_obj = event.get('event_date', event['date'])
+            current_date_key = current_date_obj.date()
+            
+            if current_date_key != last_header_date:
+                friendly_date = format_date_friendly(current_date_obj)
+                html += f"<div class='date-header'>{friendly_date}</div>"
+                last_header_date = current_date_key
+            
+            sort_date_str = "" 
+        else:
+            sort_date_str = event['date'].strftime("%d/%m/%Y")
+
+        html += f"""
+            <div class="card" style="border-left-color: {event['color']}">
+                <div>
+                    <span class="badge" style="background-color: {event['color']}">{event['source']}</span>
+                    <span class="date">{sort_date_str}</span>
+                </div>
+                <h2><a href="{event['link']}" target="_blank">{event['title']}</a></h2>
+                <div class="desc">{event['summary']}</div>
+                <a href="{event['link']}" class="read-more" target="_blank">Apri risorsa &rarr;</a>
+            </div>
+        """
+    html += "</div></body></html>"
+    with open(filename, "w", encoding="utf-8") as f: f.write(html)
+    print(f"✅ Generato: {filename}")
+
+# --- ESECUZIONE PRINCIPALE ---
+GLOBAL_EVENTS = [] 
+CALENDAR_EVENTS = [] 
+
+for filename, group_data in GROUPS.items():
+    print(f"\n--- Elaborazione Gruppo: {group_data['title']} ---")
+    current_group_events = []
+    
+    # GESTIONE RSS E FACEBOOK
+    for site in group_data["sites"]:
+        
+        # GESTIONE FACEBOOK
+        if "facebook.com" in site['url']:
+            fb_events = get_facebook_events(site['url'], site['name'], site['color'])
+            for ev in fb_events:
+                # --- FILTRO ANNO 2026 ---
+                if ev['date'].year < 2026: continue
+                # ------------------------
+                
+                current_group_events.append(ev)
+                if ev.get('event_date') and ev['event_date'].date() >= datetime.now().date():
+                    CALENDAR_EVENTS.append(ev)
+            continue # Passa al prossimo sito
+        
+        # GESTIONE RSS STANDARD
+        print(f"Scaricando {site['name']}...")
+        try:
+            feed = feedparser.parse(site['url'])
+            if not feed.entries: continue
+            for entry in feed.entries:
+                if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                    dt = datetime.fromtimestamp(time.mktime(entry.published_parsed))
+                elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
+                    dt = datetime.fromtimestamp(time.mktime(entry.updated_parsed))
+                else: dt = datetime.now()
+                
+                # --- FILTRO ANNO 2026 ---
+                if dt.year < 2026: continue
+                # ------------------------
+
+                if is_recent(dt):
+                    print(f"--> Notifica: {entry.title}")
+                    send_alerts(entry.title, entry.link, site['name'])
+                
+                summ = clean_html(entry.get("summary", ""))
+                
+                text_to_scan = entry.title + " " + summ
+                event_date = extract_event_date_from_text(text_to_scan)
+                
+                if len(summ) > 250: summ = summ[:250] + "..."
+                
+                ev = {
+                    "title": entry.title, "link": entry.link, "date": dt, 
+                    "summary": summ, "source": site["name"], "color": site["color"],
+                    "event_date": event_date
+                }
+                current_group_events.append(ev)
+                
+                # FIX EVENTI FEBBRAIO: Uso .date() per ignorare l'ora e includere oggi
+                if event_date and event_date.date() >= datetime.now().date():
+                    CALENDAR_EVENTS.append(ev)
+
+        except Exception as e: print(f"Errore {site['name']}: {e}")
+
+    # B. SCRAPING SPECIFICI
+    site_names_in_group = [s['name'] for s in group_data['sites']]
+    extra_events_list = []
+    
+    if "CAI Sansepolcro" in site_names_in_group:
+        extra_events_list.extend(get_sansepolcro_media())
+    if "CAI Grosseto" in site_names_in_group:
+        extra_events_list.extend(get_grosseto_media())
+    if "CAI Carrara" in site_names_in_group:
+        extra_events_list.extend(get_carrara_calendar())
+
+    for ev in extra_events_list:
+        # --- FILTRO ANNO 2026 ---
+        if ev['date'].year < 2026: continue
+        # ------------------------
+
+        if not ev.get('event_date'):
+            extracted_date = extract_event_date_from_text(ev['title'])
+            
+            if extracted_date:
+                ev['event_date'] = extracted_date
+            elif ev['date'] > datetime.now():
+                ev['event_date'] = ev['date']
+            else:
+                ev['event_date'] = None
+            
+        current_group_events.append(ev)
+        
+        # FIX EVENTI FEBBRAIO: Uso .date() per ignorare l'ora e includere oggi
+        if ev.get('event_date') and ev['event_date'].date() >= datetime.now().date():
+             CALENDAR_EVENTS.append(ev)
+
+    # C. Salva Gruppo
+    current_group_events.sort(key=lambda x: x["date"], reverse=True)
+    write_html_file(filename, group_data['title'], current_group_events)
+    GLOBAL_EVENTS.extend(current_group_events)
+
+# Pagina Generale
+print(f"\n--- Generazione Pagina Generale ---")
+GLOBAL_EVENTS.sort(key=lambda x: x["date"], reverse=True)
+write_html_file("tutto.html", "Tutti gli Eventi CAI (Aggregati)", GLOBAL_EVENTS)
+
+# Pagina Calendario
+print(f"\n--- Generazione Calendario Futuro ---")
+CALENDAR_EVENTS.sort(key=lambda x: x["event_date"])
+write_html_file("calendario.html", "📅 Calendario Prossimi Eventi CAI TOSCANA", CALENDAR_EVENTS, is_calendar=True)
+             
                 fb_events.append({
                     "title": full_title,
                     "link": post_url,
