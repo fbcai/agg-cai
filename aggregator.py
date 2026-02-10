@@ -5,10 +5,12 @@ from datetime import datetime, timedelta
 import time
 import re
 import os
-import json
+import io
 from email.utils import parsedate_to_datetime
 from facebook_scraper import get_posts
 import urllib.parse
+# NUOVA LIBRERIA PER I PDF
+from pypdf import PdfReader
 
 # --- CONFIGURAZIONE NOTIFICHE ---
 TG_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -20,10 +22,6 @@ wa_keys_env = os.environ.get("WHATSAPP_KEY", "")
 
 WA_PHONES = [p.strip() for p in wa_phones_env.split(',') if p.strip()]
 WA_KEYS = [k.strip() for k in wa_keys_env.split(',') if k.strip()]
-
-# --- CONFIGURAZIONE COOKIES FACEBOOK ---
-# Se inseriti nei secrets di GitHub come 'FACEBOOK_COOKIES' (formato JSON o percorso file)
-FB_COOKIES_ENV = os.environ.get("FACEBOOK_COOKIES")
 
 def send_telegram_alert(title, link, source):
     if not TG_TOKEN or not TG_CHAT_ID: return 
@@ -95,7 +93,7 @@ def extract_event_date_from_text(text):
         try: return datetime(int(match_full.group(3)), int(match_full.group(2)), int(match_full.group(1)))
         except: pass
 
-    # 2. Testuale con range (4 al 5 febbraio)
+    # 2. Testuale con range
     for m_name, m_num in months.items():
         range_pattern = r'(\d{1,2})\s*(?:[-/e]|al|&)\s*(?:\d{1,2})\s+(?:di\s+)?' + m_name
         match_range = re.search(range_pattern, text)
@@ -161,7 +159,7 @@ def get_carrara_calendar():
         print(f" -> {len(links_to_check)} link potenziali Carrara.")
         for link in links_to_check:
             try:
-                time.sleep(1.5)
+                time.sleep(2)
                 sub_resp = requests.get(link, headers=headers, timeout=10)
                 sub_soup = BeautifulSoup(sub_resp.text, 'html.parser')
                 date_span = sub_soup.find('span', class_='ic-period-startdate')
@@ -185,50 +183,93 @@ def get_carrara_calendar():
     except Exception as e: print(f"Errore Carrara: {e}")
     return events
 
-# --- FACEBOOK SCRAPER FIX ---
+# --- SCRAPER PDF GARFAGNANA (NUOVO) ---
+def get_garfagnana_events():
+    pdf_url = "https://www.garfagnanacai.it/media/754_Calendario%20attivit%C3%A0%202026.pdf"
+    source_name = "CAI Garfagnana"
+    color = "#2980b9"
+    events = []
+    
+    print(f"Scraping PDF {source_name}...")
+    try:
+        # Scarica il PDF in RAM
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(pdf_url, headers=headers)
+        response.raise_for_status()
+        
+        # Legge il PDF dalla memoria
+        with io.BytesIO(response.content) as f:
+            reader = PdfReader(f)
+            # Pagine 11 a 53 (Indici 10 a 52)
+            start_page = 10
+            end_page = min(53, len(reader.pages))
+            
+            for i in range(start_page, end_page):
+                try:
+                    page = reader.pages[i]
+                    text = page.extract_text()
+                    if not text: continue
+                    
+                    # Prende le prime righe per cercare la data
+                    lines = text.split('\n')
+                    header_text = " ".join(lines[:5]) # Analizza le prime 5 righe
+                    
+                    event_date = extract_event_date_from_text(header_text)
+                    
+                    if event_date and event_date.year >= 2026:
+                        # Titolo: prende la prima riga che non è la data
+                        # Spesso nei PDF il titolo è subito dopo la data
+                        title_candidate = "Evento CAI Garfagnana"
+                        for line in lines[:6]:
+                            if len(line) > 5 and not any(x in line.lower() for x in ['data', '2026', 'gennaio', 'febbraio', 'marzo']):
+                                title_candidate = line.strip()
+                                break
+                        
+                        full_title = f"⛰️ {title_candidate}"
+                        
+                        # Link al PDF
+                        events.append({
+                            "title": full_title,
+                            "link": pdf_url, # Link al PDF generale
+                            "date": datetime.now(),
+                            "summary": f"Evento estratto da pag. {i+1} del Calendario 2026. Data: {event_date.strftime('%d/%m/%Y')}",
+                            "source": source_name,
+                            "color": color,
+                            "event_date": event_date
+                        })
+                except Exception as e:
+                    print(f"Err pag {i}: {e}")
+                    continue
+    except Exception as e:
+        print(f"Errore PDF Garfagnana: {e}")
+        
+    return events
+
+# --- FACEBOOK SCRAPER ---
 def get_facebook_events(page_url, source_name, color):
     print(f"Scraping FB: {source_name}...")
     fb_events = []
     
     # 1. Estrazione ID/Nome precisa
     page_id = None
-    # Caso Profilo ID (es. profile.php?id=1000...)
     match_id = re.search(r'id=(\d+)', page_url)
     if match_id:
         page_id = match_id.group(1)
     else:
-        # Caso Pagina/Gruppo (es. /groups/12345 o /cai.barga)
-        # Rimuove slash finale e prende l'ultimo pezzo
         clean_url = page_url.rstrip('/')
         page_id = clean_url.split('/')[-1]
 
-    # 2. Gestione Cookies (Se disponibili nei secrets)
-    cookies = None
-    if FB_COOKIES_ENV:
-        try:
-            cookies = json.loads(FB_COOKIES_ENV)
-            print(" -> Cookies caricati.")
-        except:
-            print(" -> Errore parsing cookies.")
-
     # 3. Tentativo Scraping
     try:
-        # Per i Gruppi è obbligatorio specificare group=True se usiamo l'ID
         is_group = "groups" in page_url
-        
-        # Opzioni per ridurre blocchi
         opts = {"allow_extra_requests": False, "posts_per_page": 2}
-        if is_group:
-            # Nota: get_posts per gruppi funziona meglio se passiamo cookies
-            print(f" -> Modalità Gruppo ({page_id})")
         
-        for post in get_posts(page_id, pages=2, cookies=cookies, options=opts):
+        for post in get_posts(page_id, pages=2, options=opts):
             try:
                 post_text = post.get('text', '')
                 post_time = post.get('time')
                 post_url = post.get('post_url')
                 
-                # Se post_url manca, ricostruiscilo
                 if not post_url and post.get('post_id'):
                     if is_group:
                         post_url = f"https://www.facebook.com/groups/{page_id}/posts/{post.get('post_id')}"
@@ -254,8 +295,6 @@ def get_facebook_events(page_url, source_name, color):
             
     except Exception as e:
         print(f"Errore FB {source_name}: {e}")
-        if "Login required" in str(e):
-            print(" -> ⚠️ I Gruppi/Profili richiedono Cookies per funzionare.")
     
     return fb_events
 
@@ -360,7 +399,6 @@ GROUPS = {
             {"url": "https://www.caipescia.it/feed/", "name": "CAI Pescia", "color": "#e67e22"},
             {"url": "https://www.facebook.com/groups/www.caipescia.it", "name": "FB CAI Pescia", "color": "#e67e22"},
             {"url": "https://www.facebook.com/cai.barga", "name": "FB CAI Barga", "color": "#d35400"},
-            {"url": "https://www.facebook.com/profile.php?id=100093533902575", "name": "FB CAI Garfagnana", "color": "#2980b9"},
             {"url": "https://www.facebook.com/CaisezionediMassa", "name": "FB CAI Massa", "color": "#2c3e50"}
          ]
     },
@@ -457,6 +495,8 @@ for filename, group_data in GROUPS.items():
     if "CAI Sansepolcro" in site_names: extra_events.extend(get_sansepolcro_media())
     if "CAI Grosseto" in site_names: extra_events.extend(get_grosseto_media())
     if "CAI Carrara" in site_names: extra_events.extend(get_carrara_calendar())
+    # AGGIUNTO NUOVO SCRAPER PER CAI GARFAGNANA
+    if "CAI Castelnuovo G." in site_names: extra_events.extend(get_garfagnana_events())
 
     for ev in extra_events:
         if ev['date'].year < 2026: continue
