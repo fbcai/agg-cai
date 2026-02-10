@@ -589,4 +589,99 @@ for filename, group_data in GROUPS.items():
         # GESTIONE FACEBOOK
         if "facebook.com" in site['url']:
             fb_events = get_facebook_events(site['url'], site['name'], site['color'])
-            for ev in fb_
+            for ev in fb_events:
+                # --- FILTRO ANNO 2026 ---
+                if ev['date'].year < 2026: continue
+                # ------------------------
+                
+                current_group_events.append(ev)
+                if ev.get('event_date') and ev['event_date'].date() >= datetime.now().date():
+                    CALENDAR_EVENTS.append(ev)
+            continue # Passa al prossimo sito
+        
+        # GESTIONE RSS STANDARD
+        print(f"Scaricando {site['name']}...")
+        try:
+            feed = feedparser.parse(site['url'])
+            if not feed.entries: continue
+            for entry in feed.entries:
+                if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                    dt = datetime.fromtimestamp(time.mktime(entry.published_parsed))
+                elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
+                    dt = datetime.fromtimestamp(time.mktime(entry.updated_parsed))
+                else: dt = datetime.now()
+                
+                # --- FILTRO ANNO 2026 ---
+                if dt.year < 2026: continue
+                # ------------------------
+
+                if is_recent(dt):
+                    print(f"--> Notifica: {entry.title}")
+                    send_alerts(entry.title, entry.link, site['name'])
+                
+                summ = clean_html(entry.get("summary", ""))
+                
+                text_to_scan = entry.title + " " + summ
+                event_date = extract_event_date_from_text(text_to_scan)
+                
+                if len(summ) > 250: summ = summ[:250] + "..."
+                
+                ev = {
+                    "title": entry.title, "link": entry.link, "date": dt, 
+                    "summary": summ, "source": site["name"], "color": site["color"],
+                    "event_date": event_date
+                }
+                current_group_events.append(ev)
+                
+                # FIX EVENTI FEBBRAIO: Uso .date() per ignorare l'ora e includere oggi
+                if event_date and event_date.date() >= datetime.now().date():
+                    CALENDAR_EVENTS.append(ev)
+
+        except Exception as e: print(f"Errore {site['name']}: {e}")
+
+    # B. SCRAPING SPECIFICI
+    site_names_in_group = [s['name'] for s in group_data['sites']]
+    extra_events_list = []
+    
+    if "CAI Sansepolcro" in site_names_in_group:
+        extra_events_list.extend(get_sansepolcro_media())
+    if "CAI Grosseto" in site_names_in_group:
+        extra_events_list.extend(get_grosseto_media())
+    if "CAI Carrara" in site_names_in_group:
+        extra_events_list.extend(get_carrara_calendar())
+
+    for ev in extra_events_list:
+        # --- FILTRO ANNO 2026 ---
+        if ev['date'].year < 2026: continue
+        # ------------------------
+
+        if not ev.get('event_date'):
+            extracted_date = extract_event_date_from_text(ev['title'])
+            
+            if extracted_date:
+                ev['event_date'] = extracted_date
+            elif ev['date'] > datetime.now():
+                ev['event_date'] = ev['date']
+            else:
+                ev['event_date'] = None
+            
+        current_group_events.append(ev)
+        
+        # FIX EVENTI FEBBRAIO: Uso .date() per ignorare l'ora e includere oggi
+        if ev.get('event_date') and ev['event_date'].date() >= datetime.now().date():
+             CALENDAR_EVENTS.append(ev)
+
+    # C. Salva Gruppo
+    current_group_events.sort(key=lambda x: x["date"], reverse=True)
+    write_html_file(filename, group_data['title'], current_group_events)
+    GLOBAL_EVENTS.extend(current_group_events)
+
+# Pagina Generale
+print(f"\n--- Generazione Pagina Generale ---")
+GLOBAL_EVENTS.sort(key=lambda x: x["date"], reverse=True)
+write_html_file("tutto.html", "Tutti gli Eventi CAI (Aggregati)", GLOBAL_EVENTS)
+
+# Pagina Calendario
+print(f"\n--- Generazione Calendario Futuro ---")
+CALENDAR_EVENTS.sort(key=lambda x: x["event_date"])
+write_html_file("calendario.html", "📅 Calendario Prossimi Eventi CAI TOSCANA", CALENDAR_EVENTS, is_calendar=True)
