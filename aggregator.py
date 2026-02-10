@@ -551,16 +551,14 @@ GROUPS = {
         "title": "Toscana Nord (Pistoia, Lucca, Pontremoli, Fivizzano, Barga, Maresca, Castelnuovo, Pescia)",
         "sites": [
             {"url": "https://www.caipistoia.org/feed/", "name": "CAI Pistoia", "color": "#8e44ad"},
-            {"url": "https://www.cailucca.it/wp/feed/", "name": "CAI Lucca", "color": "#34495e"},
+            {"url": "https://cailucca.it/wp/feed/", "name": "CAI Lucca", "color": "#34495e"},
             {"url": "https://caipontremoli.it/feed/", "name": "CAI Pontremoli", "color": "#9b59b6"},
             {"url": "https://www.caifivizzano.it/feed/", "name": "CAI Fivizzano", "color": "#27ae60"},
             # CAI BARGA GESTITO DALLO SCRAPER SPECIFICO, QUI SOLO PLACEHOLDER
             {"url": "https://www.caibarga.it/", "name": "CAI Barga", "color": "#d35400"},
             {"url": "https://www.caimaresca.it/feed/", "name": "CAI Maresca", "color": "#16a085"},
-            {"url": "https://www.caicastelnuovogarfagnana.org/feed/", "name": "CAI Castelnuovo G.", "color": "#2980b9"},
-            {"url": "https://www.caipescia.it/feed/", "name": "CAI Pescia", "color": "#e67e22"},
-            {"url": "https://www.facebook.com/groups/www.caipescia.it", "name": "FB CAI Pescia", "color": "#e67e22"},
-            {"url": "https://www.facebook.com/CaisezionediMassa", "name": "FB CAI Massa", "color": "#2c3e50"}
+            {"url": "https://organizzazione.cai.it/sez-castelnuovo-garfagnana/feed/", "name": "CAI Castelnuovo G.", "color": "#16a575"},
+            {"url": "https://www.caipescia.it/feed/", "name": "CAI Pescia", "color": "#e67e22"}
          ]
     },
     "firenze.html": {
