@@ -185,7 +185,7 @@ def get_garfagnana_media():
     urls = ["https://organizzazione.cai.it/sez-castelnuovo-garfagnana/news/"]
     return scrape_generic_media(urls, "CAI Castelnuovo G.", "https://organizzazione.cai.it", color="#2980b9")
 
-# --- NUOVO SCRAPER CAI BARGA ---
+# --- SCRAPER CAI BARGA FIX (GITE) ---
 def get_barga_activities():
     url = "https://www.caibarga.it/Gite.htm"
     base_domain = "https://www.caibarga.it"
@@ -196,18 +196,28 @@ def get_barga_activities():
     print(f"Scraping {source_name}...")
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
+        # Usa .content per far gestire la codifica a BeautifulSoup (es. latin-1 vs utf-8)
         resp = requests.get(url, headers=headers, timeout=15)
-        soup = BeautifulSoup(resp.text, 'html.parser')
+        soup = BeautifulSoup(resp.content, 'html.parser')
         
-        # Analizza righe (tabelle o paragrafi) che contengono "Programma"
-        for row in soup.find_all(['tr', 'p', 'li']):
+        # Cerca principalmente le righe delle tabelle, ma anche paragrafi
+        for row in soup.find_all(['tr', 'p']):
             text = row.get_text(" ", strip=True)
             
-            if "Programma" in text:
-                # Cerca il link che contiene la parola "Programma" (case insensitive)
+            # 1. CERCA PRIMA LA DATA
+            # Se la riga non contiene una data 2026, la ignoriamo subito
+            if "2026" not in text:
+                continue
+                
+            event_date = extract_event_date_from_text(text)
+            
+            if event_date and event_date.year >= 2026:
+                
+                # 2. CERCA IL LINK "Programma" o un link generico
                 link_tag = row.find('a', string=re.compile("Programma", re.IGNORECASE))
                 
-                # Se non trova il link con quel testo specifico, prova a prendere il primo link della riga
+                # Se non trova "Programma", cerca il primo link disponibile nella riga
+                # (spesso il titolo stesso è linkato)
                 if not link_tag:
                     link_tag = row.find('a')
                 
@@ -218,33 +228,86 @@ def get_barga_activities():
                 
                 full_link = urllib.parse.urljoin(base_domain, href)
                 
-                # Data
-                event_date = extract_event_date_from_text(text)
+                # 3. PULIZIA TITOLO
+                # Rimuove parole chiave e la data per lasciare solo il titolo
+                clean_title = text
+                # Rimuovi date numeriche e testuali comuni
+                clean_title = re.sub(r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}', '', clean_title) # 15/02/2026
+                clean_title = re.sub(r'\d{1,2}\s+[A-Za-z]+\s+2026', '', clean_title, flags=re.IGNORECASE) # 15 Febbraio 2026
+                clean_title = clean_title.replace("Programma", "").replace("Scarica", "").strip()
+                clean_title = clean_title.strip("- ").strip("|").strip()
                 
-                if event_date and event_date.year >= 2026:
-                    # Titolo: Pulisci il testo rimuovendo "Programma" e la data
-                    clean_title = text.replace("Programma", "").strip()
-                    clean_title = re.sub(r'\d{1,2}[/-]\d{1,2}', '', clean_title) # Toglie date numeriche
-                    clean_title = clean_title.strip("- ").strip()
-                    
-                    if len(clean_title) < 3: clean_title = "Gita Sociale CAI Barga"
-                    
-                    full_title = f"⛰️ {clean_title}"
-                    
-                    if any(e['link'] == full_link for e in events): continue
+                if len(clean_title) < 3: 
+                    clean_title = "Gita Sociale CAI Barga"
+                
+                full_title = f"⛰️ {clean_title}"
+                
+                # Evita duplicati
+                if any(e['link'] == full_link for e in events): continue
 
-                    events.append({
-                        "title": full_title,
-                        "link": full_link,
-                        "date": datetime.now(), 
-                        "summary": f"Gita CAI Barga del {event_date.strftime('%d/%m/%Y')}",
-                        "source": source_name,
-                        "color": color,
-                        "event_date": event_date
-                    })
+                events.append({
+                    "title": full_title,
+                    "link": full_link,
+                    "date": datetime.now(), 
+                    "summary": f"Gita CAI Barga del {event_date.strftime('%d/%m/%Y')}",
+                    "source": source_name,
+                    "color": color,
+                    "event_date": event_date
+                })
     except Exception as e:
         print(f"Errore scraping Barga: {e}")
     
+    return events
+
+# --- SCRAPER CAI MASSA (LEGGI TUTTO) ---
+def get_massa_events():
+    url = "https://www.caimassa.com/"
+    base_domain = "https://www.caimassa.com/"
+    source_name = "CAI Massa"
+    color = "#2c3e50"
+    events = []
+    
+    print(f"Scraping {source_name}...")
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        resp = requests.get(url, headers=headers, timeout=15)
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        
+        for link in soup.find_all('a', string=re.compile("leggi tutto", re.IGNORECASE)):
+            href = link.get('href')
+            if not href: continue
+            
+            full_link = urllib.parse.urljoin(base_domain, href)
+            container = link.find_parent(['div', 'article', 'li'])
+            if not container: container = link.parent 
+            
+            container_text = container.get_text(" ", strip=True)
+            event_date = extract_event_date_from_text(container_text)
+            
+            if event_date and event_date.year >= 2026:
+                title_tag = container.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+                if title_tag:
+                    title = title_tag.get_text(strip=True)
+                else:
+                    title = container_text.split("leggi tutto")[0].strip()[:100]
+                
+                full_title = f"⛰️ {title}"
+                
+                if any(e['link'] == full_link for e in events): continue
+
+                events.append({
+                    "title": full_title,
+                    "link": full_link,
+                    "date": datetime.now(),
+                    "summary": f"Evento CAI Massa del {event_date.strftime('%d/%m/%Y')}",
+                    "source": source_name,
+                    "color": color,
+                    "event_date": event_date
+                })
+                
+    except Exception as e:
+        print(f"Errore scraping Massa: {e}")
+        
     return events
 
 def get_carrara_calendar():
@@ -316,7 +379,6 @@ def get_carrara_calendar():
                         "event_date": event_date
                     })
             except Exception as e:
-                print(f"   ! Errore su link {link}: {e}")
                 continue
 
     except Exception as e:
@@ -348,12 +410,17 @@ def get_garfagnana_events():
                     text = page.extract_text()
                     if not text: continue
                     
-                    lines = text.split('\n')
-                    header_text = " ".join(lines[:5])
-                    event_date = extract_event_date_from_text(header_text)
+                    # Filtra linee vuote per ottenere solo righe con testo
+                    raw_lines = text.split('\n')
+                    lines = [line.strip() for line in raw_lines if line.strip()]
+                    
+                    if not lines: continue
+
+                    # 1. Prima riga testuale per la data (Indice 0)
+                    event_date = extract_event_date_from_text(lines[0])
                     
                     if event_date and event_date.year >= 2026:
-                        # TITOLO: Prende SOLO la seconda riga (indice 1)
+                        # 2. Seconda riga testuale per il titolo (Indice 1)
                         if len(lines) > 1:
                             title = lines[1].strip()
                         else:
@@ -378,54 +445,9 @@ def get_garfagnana_events():
         
     return events
 
+# (Funzione Facebook presente per compatibilità ma non usata)
 def get_facebook_events(page_url, source_name, color):
-    print(f"Scraping Facebook per {source_name}...")
-    fb_events = []
-    
-    try:
-        if "profile.php" in page_url:
-            page_id = page_url.split('id=')[-1]
-        elif "groups" in page_url:
-            page_id = page_url.rstrip('/').split('/')[-1]
-        else:
-            page_id = page_url.rstrip('/').split('/')[-1]
-    except:
-        page_id = page_url 
-
-    try:
-        for post in get_posts(page_id, pages=2):
-            try:
-                post_text = post.get('text', '')
-                post_time = post.get('time')
-                post_url = post.get('post_url')
-                
-                if not post_time: post_time = datetime.now()
-                
-                title = " ".join(post_text.split()[:10]) + "..." if post_text else "Post Facebook"
-                full_title = f"📘 [FB] {title}"
-                
-                event_date = extract_event_date_from_text(post_text)
-
-                if is_recent(post_time):
-                    send_alerts(full_title, post_url, source_name)
-                
-                fb_events.append({
-                    "title": full_title,
-                    "link": post_url,
-                    "date": post_time,
-                    "summary": post_text[:300] + "...",
-                    "source": source_name,
-                    "color": color,
-                    "event_date": event_date
-                })
-            except Exception as e:
-                continue
-                
-    except Exception as e:
-        print(f"Errore scraping Facebook {source_name} ({page_id}): {e}")
-        pass
-        
-    return fb_events
+    return []
 
 def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
     EXTS = ('.pdf', '.jpg', '.jpeg', '.png', '.webp')
@@ -526,8 +548,7 @@ GROUPS = {
             {"url": "https://caistia.it/feed/", "name": "CAI Stia", "color": "#f1c40f"},
             {"url": "https://www.caisansepolcro.it/feed/", "name": "CAI Sansepolcro", "color": "#3498db"},
             {"url": "https://organizzazione.cai.it/sez-siena/feed/", "name": "CAI Siena", "color": "#9b59b6"},
-            {"url": "https://www.caigrosseto.it/feed/", "name": "CAI Grosseto", "color": "#16a085"},
-            {"url": "https://www.facebook.com/groups/1487615384876547", "name": "FB CAI Grosseto", "color": "#16a085"}
+            {"url": "https://caigrosseto.it/prossimi-eventi/", "name": "CAI Grosseto", "color": "#16a085"}
         ]
     },
     "costa.html": {
@@ -540,11 +561,7 @@ GROUPS = {
             {"url": "https://www.caipontedera.it/feed/", "name": "CAI Pontedera", "color": "#1abc9c"},
             {"url": "https://www.caicarrara.it/feed/", "name": "CAI Carrara", "color": "#7f8c8d"},
             {"url": "https://www.caipietrasanta.it/feed/", "name": "CAI Pietrasanta", "color": "#d35400"},
-            {"url": "https://www.caimassa.it/feed/", "name": "CAI Massa", "color": "#2c3e50"},
-            {"url": "https://www.facebook.com/cailivorno", "name": "FB CAI Livorno", "color": "#3b5998"},
-            {"url": "https://www.facebook.com/CAIViareggio", "name": "FB CAI Viareggio", "color": "#3b5558"},
-            {"url": "https://www.facebook.com/CaiPietrasanta/", "name": "FB CAI Pietrasanta", "color": "#d35400"},
-            {"url": "https://www.facebook.com/cai.fortedeimarmi", "name": "FB CAI Forte", "color": "#3498db"}
+            {"url": "https://www.caimassa.it/feed/", "name": "CAI Massa", "color": "#2c3e50"}
         ]
     },
     "nord.html": {
@@ -554,10 +571,9 @@ GROUPS = {
             {"url": "https://cailucca.it/wp/feed/", "name": "CAI Lucca", "color": "#34495e"},
             {"url": "https://caipontremoli.it/feed/", "name": "CAI Pontremoli", "color": "#9b59b6"},
             {"url": "https://www.caifivizzano.it/feed/", "name": "CAI Fivizzano", "color": "#27ae60"},
-            # CAI BARGA GESTITO DALLO SCRAPER SPECIFICO, QUI SOLO PLACEHOLDER
             {"url": "https://www.caibarga.it/", "name": "CAI Barga", "color": "#d35400"},
             {"url": "https://www.caimaresca.it/feed/", "name": "CAI Maresca", "color": "#16a085"},
-            {"url": "https://organizzazione.cai.it/sez-castelnuovo-garfagnana/feed/", "name": "CAI Castelnuovo G.", "color": "#16a575"},
+            {"url": "https://www.caicastelnuovogarfagnana.org/feed/", "name": "CAI Castelnuovo G.", "color": "#2980b9"},
             {"url": "https://www.caipescia.it/feed/", "name": "CAI Pescia", "color": "#e67e22"}
          ]
     },
@@ -690,21 +706,8 @@ for filename, group_data in GROUPS.items():
     print(f"\n--- Elaborazione Gruppo: {group_data['title']} ---")
     current_group_events = []
     
-    # GESTIONE RSS E FACEBOOK
+    # GESTIONE RSS
     for site in group_data["sites"]:
-        
-        # GESTIONE FACEBOOK
-        if "facebook.com" in site['url']:
-            fb_events = get_facebook_events(site['url'], site['name'], site['color'])
-            for ev in fb_events:
-                # --- FILTRO ANNO 2026 ---
-                if ev['date'].year < 2026: continue
-                # ------------------------
-                
-                current_group_events.append(ev)
-                if ev.get('event_date') and ev['event_date'].date() >= datetime.now().date():
-                    CALENDAR_EVENTS.append(ev)
-            continue # Passa al prossimo sito
         
         # GESTIONE RSS STANDARD
         print(f"Scaricando {site['name']}...")
@@ -758,6 +761,8 @@ for filename, group_data in GROUPS.items():
         extra_events_list.extend(get_carrara_calendar())
     if "CAI Barga" in site_names_in_group:
         extra_events_list.extend(get_barga_activities())
+    if "CAI Massa" in site_names_in_group:
+        extra_events_list.extend(get_massa_events())
     if "CAI Castelnuovo G." in site_names_in_group:
         extra_events_list.extend(get_garfagnana_events())
         extra_events_list.extend(get_garfagnana_media())
