@@ -36,3 +36,9 @@ jobs:
           git add *.html
           # Se ci sono cambiamenti, fai commit, POI SCARICA (pull) eventuali modifiche remote, POI carica (push)
           git diff --quiet && git diff --staged --quiet || (git commit -m "Aggiornamento automatico" && git pull --rebase origin main && git push)
+
+        # --- IMPORTANTE: SALVA IL REGISTRO ---
+        git add link_registry.json 2>/dev/null || true
+        # -------------------------------------
+        git commit -m "Aggiornamento eventi e registro" || exit 0
+        git push
