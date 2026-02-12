@@ -204,36 +204,34 @@ def get_barga_activities():
         for row in soup.find_all(['tr', 'p']):
             text = row.get_text(" ", strip=True)
             
-            # 1. CERCA PRIMA LA DATA
-            # Se la riga non contiene una data 2026, la ignoriamo subito
-            if "2026" not in text:
-                continue
-                
+            # --- MODIFICA: RIMOSSO FILTRO "2026" ---
+            # Prendiamo tutte le righe, la data verrà estratta e validata dopo.
+            
+            # CERCA IL LINK "Programma"
+            link_tag = row.find('a', string=re.compile("Programma", re.IGNORECASE))
+            
+            # Se non trova "Programma", cerca il primo link disponibile nella riga
+            if not link_tag:
+                link_tag = row.find('a')
+            
+            if not link_tag: continue
+            
+            href = link_tag.get('href')
+            if not href: continue
+            
+            full_link = urllib.parse.urljoin(base_domain, href)
+            
+            # Estrazione Data (dd/mm -> anno corrente/prossimo gestito dalla funzione)
             event_date = extract_event_date_from_text(text)
             
+            # Manteniamo solo il filtro finale sull'anno per il calendario 2026
             if event_date and event_date.year >= 2026:
                 
-                # 2. CERCA IL LINK "Programma" o un link generico
-                link_tag = row.find('a', string=re.compile("Programma", re.IGNORECASE))
-                
-                # Se non trova "Programma", cerca il primo link disponibile nella riga
-                # (spesso il titolo stesso è linkato)
-                if not link_tag:
-                    link_tag = row.find('a')
-                
-                if not link_tag: continue
-                
-                href = link_tag.get('href')
-                if not href: continue
-                
-                full_link = urllib.parse.urljoin(base_domain, href)
-                
-                # 3. PULIZIA TITOLO
-                # Rimuove parole chiave e la data per lasciare solo il titolo
+                # PULIZIA TITOLO
                 clean_title = text
                 # Rimuovi date numeriche e testuali comuni
                 clean_title = re.sub(r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}', '', clean_title) # 15/02/2026
-                clean_title = re.sub(r'\d{1,2}\s+[A-Za-z]+\s+2026', '', clean_title, flags=re.IGNORECASE) # 15 Febbraio 2026
+                clean_title = re.sub(r'\d{1,2}\s+[A-Za-z]+\s+2026', '', clean_title, flags=re.IGNORECASE) 
                 clean_title = clean_title.replace("Programma", "").replace("Scarica", "").strip()
                 clean_title = clean_title.strip("- ").strip("|").strip()
                 
@@ -571,6 +569,7 @@ GROUPS = {
             {"url": "https://cailucca.it/wp/feed/", "name": "CAI Lucca", "color": "#34495e"},
             {"url": "https://caipontremoli.it/feed/", "name": "CAI Pontremoli", "color": "#9b59b6"},
             {"url": "https://www.caifivizzano.it/feed/", "name": "CAI Fivizzano", "color": "#27ae60"},
+            # CAI BARGA GESTITO DALLO SCRAPER SPECIFICO
             {"url": "https://www.caibarga.it/", "name": "CAI Barga", "color": "#d35400"},
             {"url": "https://www.caimaresca.it/feed/", "name": "CAI Maresca", "color": "#16a085"},
             {"url": "https://www.caicastelnuovogarfagnana.org/feed/", "name": "CAI Castelnuovo G.", "color": "#2980b9"},
