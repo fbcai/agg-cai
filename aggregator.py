@@ -128,11 +128,19 @@ def extract_event_date_from_text(text):
     months = {'gennaio': 1, 'gen': 1, 'febbraio': 2, 'feb': 2, 'marzo': 3, 'mar': 3, 'aprile': 4, 'apr': 4, 'maggio': 5, 'mag': 5, 'giugno': 6, 'giu': 6, 'luglio': 7, 'lug': 7, 'agosto': 8, 'ago': 8, 'settembre': 9, 'set': 9, 'sett': 9, 'ottobre': 10, 'ott': 10, 'novembre': 11, 'nov': 11, 'dicembre': 12, 'dic': 12}
     today = datetime.now()
     
-    match_full = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', text)
+    # 1. Formato standard dd/mm/yyyy
+    match_full = re.search(r'(\d{1,2})[./-](\d{1,2})[./-](\d{4})', text)
     if match_full:
         try: return datetime(int(match_full.group(3)), int(match_full.group(2)), int(match_full.group(1)))
         except: pass
 
+    # 2. Formato breve dd/mm/yy (es. 08/02/26)
+    match_short_year = re.search(r'(\d{1,2})[./-](\d{1,2})[./-](26)', text)
+    if match_short_year:
+        try: return datetime(2026, int(match_short_year.group(2)), int(match_short_year.group(1)))
+        except: pass
+
+    # 3. Formato testuale
     for m_name, m_num in months.items():
         range_pattern = r'(\d{1,2})\s*(?:[-/e]|al|&)\s*(?:\d{1,2})\s+(?:di\s+)?' + m_name
         match_range = re.search(range_pattern, text)
@@ -154,7 +162,8 @@ def extract_event_date_from_text(text):
                 return datetime(y, m_num, d)
             except: pass
 
-    match_short = re.search(r'(\d{1,2})[/-](\d{1,2})', text)
+    # 4. Formato brevissimo dd/mm
+    match_short = re.search(r'(\d{1,2})[./-](\d{1,2})', text)
     if match_short:
         try:
             d, m = int(match_short.group(1)), int(match_short.group(2))
@@ -186,10 +195,9 @@ def get_pescia_events():
     source_name = "CAI Pescia"
     color = "#e67e22"
     events = []
-    
     print(f"Scraping {source_name}...")
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        headers = {'User-Agent': 'Mozilla/5.0'}
         resp = requests.get(url, headers=headers, timeout=20, verify=False)
         soup = BeautifulSoup(resp.text, 'html.parser')
         
@@ -208,7 +216,6 @@ def get_pescia_events():
                 full_title = f"⛰️ {clean_title}"
                 if any(e['link'] == full_link for e in events): continue
                 pub_date = get_pub_date(full_link)
-                
                 events.append({
                     "title": full_title, "link": full_link, "date": pub_date,
                     "summary": f"Evento CAI Pescia del {event_date.strftime('%d/%m/%Y')}",
@@ -246,7 +253,6 @@ def get_scandicci_events():
                 full_title = f"⛰️ {full_title_text}"
                 if any(e['link'] == full_link for e in events): continue
                 pub_date = get_pub_date(full_link)
-                
                 events.append({
                     "title": full_title, "link": full_link, "date": pub_date,
                     "summary": f"Evento CAI Scandicci del {event_date.strftime('%d/%m/%Y')}",
@@ -275,16 +281,18 @@ def get_barga_activities():
             text = row.get_text(" ", strip=True)
             if len(text) < 5: continue
 
-            if not re.search(r'\d{1,2}[./-]\d{1,2}', text): continue
-            
+            # Rimuove filtri regex troppo stretti per lasciar lavorare l'estrattore date
             event_date = extract_event_date_from_text(text)
             
             if event_date and event_date.year >= 2026:
                 link_tag = row.find('a')
                 if not link_tag: continue
+                
                 href = link_tag.get('href')
                 if not href or "mailto" in href: continue
                 
+                # PULIZIA URL (FIX SPAZI E BACKSLASH)
+                href = href.replace(" ", "%20").replace("\\", "/")
                 full_link = urllib.parse.urljoin(base_domain, href)
                 
                 clean_title = text
@@ -306,7 +314,7 @@ def get_barga_activities():
     except Exception as e: print(f"Err Barga: {e}")
     return events
 
-# --- SCRAPER CAI MASSA (CLEAN VERSION) ---
+# --- SCRAPER CAI MASSA (IMG LINK) ---
 def get_massa_events():
     url = "https://www.caimassa.com/"
     base_domain = "https://www.caimassa.com/"
@@ -317,36 +325,28 @@ def get_massa_events():
     print(f"Scraping {source_name}...")
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
-        # verify=False per SSL scaduti/errati
         resp = requests.get(url, headers=headers, timeout=20, verify=False)
         soup = BeautifulSoup(resp.text, 'html.parser')
         
-        # 1. CERCA TITOLI h2 class='news_title'
         titles = soup.find_all('h2', class_='news_title')
         
         for h2 in titles:
             title_text = h2.get_text(strip=True)
             if not title_text: continue
             
-            # 2. CERCA L'IMMAGINE (CHE È IL LINK)
             img_tag = h2.find_next('img')
-            
             if not img_tag: continue
             src = img_tag.get('src')
             if not src: continue
             
-            # Il link è la locandina
+            # PULIZIA URL (FIX SPAZI)
+            src = src.replace(" ", "%20")
             full_link = urllib.parse.urljoin(base_domain, src)
             
-            # 3. CERCA LA DATA NEL CONTENITORE (genitore del h2)
             container = h2.parent
-            if container:
-                container_text = container.get_text(" ", strip=True)
-                event_date = extract_event_date_from_text(container_text)
-            else:
-                event_date = None
+            container_text = container.get_text(" ", strip=True) if container else ""
+            event_date = extract_event_date_from_text(container_text)
             
-            # Fallback: cerca nel testo successivo al titolo
             if not event_date:
                 context = ""
                 for sib in h2.find_next_siblings(limit=3):
@@ -355,9 +355,7 @@ def get_massa_events():
 
             if event_date and event_date.year >= 2026:
                 full_title = f"⛰️ {title_text}"
-                
                 if any(e['link'] == full_link for e in events): continue
-                
                 pub_date = get_pub_date(full_link) 
 
                 events.append({
@@ -366,7 +364,6 @@ def get_massa_events():
                     "source": source_name, "color": color, "event_date": event_date
                 })
                 print(f"   + Massa Trovato: {full_title}")
-
     except Exception as e: print(f"Err Massa: {e}")
     return events
 
@@ -408,7 +405,6 @@ def get_carrara_calendar():
                     if any(e['link'] == link for e in events): continue
                     
                     get_pub_date(link) 
-                    
                     events.append({
                         "title": full_title, "link": link, "date": event_date, 
                         "summary": f"Data: {event_date.strftime('%d/%m/%Y')}",
@@ -442,7 +438,6 @@ def get_garfagnana_events():
                         title = lines[1].strip() if len(lines) > 1 else "Evento CAI Garfagnana"
                         full_title = f"⛰️ {title}"
                         get_pub_date(pdf_url, full_title) 
-                        
                         events.append({
                             "title": full_title, "link": pdf_url, "date": fixed_date,
                             "summary": f"Pag {i+1} Calendario 2026. Data: {event_date.strftime('%d/%m/%Y')}",
@@ -459,12 +454,7 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
     EXTS = ('.pdf', '.jpg', '.jpeg', '.png', '.webp')
     media_events = []
     seen = set()
-    
-    bad_keywords = [
-        'logo', 'icon', 'caiweb', 'stemma', 'facebook', 'whatsapp',
-        'instagram', 'aquila', 'cropped', 'retina', 'button', 'user', 'admin',
-        'cropped-aquila'
-    ]
+    bad_keywords = ['logo', 'icon', 'caiweb', 'stemma', 'facebook', 'whatsapp', 'instagram', 'aquila', 'cropped', 'retina', 'button', 'user', 'admin', 'cropped-aquila']
 
     for url in urls:
         print(f"Scraping media {source_name}: {url}...")
@@ -475,16 +465,16 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
             for link in soup.find_all('a'):
                 href = link.get('href')
                 if href and href.lower().endswith(EXTS):
+                    # PULIZIA URL (FIX SPAZI)
+                    href = href.replace(" ", "%20")
                     full = urllib.parse.urljoin(base_domain, href.strip())
                     if any(bad in full.lower() for bad in bad_keywords): continue
                     if full in seen: continue
-                    
                     title = link.get_text(strip=True)
                     if not title:
                         img = link.find('img')
                         if img: title = img.get('alt')
                     if not title or "scarica" in title.lower(): title = clean_filename(full)
-                    
                     seen.add(full)
                     pub_date = get_pub_date(full)
                     full_title = f"📄 {title}" if full.endswith('.pdf') else f"🖼️ {title}"
@@ -494,10 +484,11 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
             for img in soup.find_all('img'):
                 src = img.get('src')
                 if src and src.lower().endswith(EXTS):
+                    # PULIZIA URL (FIX SPAZI)
+                    src = src.replace(" ", "%20")
                     full = urllib.parse.urljoin(base_domain, src.strip())
                     if any(bad in full.lower() for bad in bad_keywords): continue
                     if full in seen: continue
-                    
                     title = img.get('alt') or clean_filename(full)
                     seen.add(full)
                     pub_date = get_pub_date(full)
