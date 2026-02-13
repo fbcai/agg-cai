@@ -11,7 +11,6 @@ from email.utils import parsedate_to_datetime
 from facebook_scraper import get_posts
 import urllib.parse
 from pypdf import PdfReader
-# Disabilita warning SSL per siti vecchi/mal configurati (es. Massa)
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -51,9 +50,6 @@ def save_registry():
         print(f"Errore salvataggio registro: {e}")
 
 def get_pub_date(link, title_discriminator=""):
-    """
-    Restituisce la data di 'scoperta' del link.
-    """
     key = link
     if title_discriminator:
         key = f"{link}::{title_discriminator}"
@@ -62,16 +58,13 @@ def get_pub_date(link, title_discriminator=""):
         return datetime.fromisoformat(LINK_REGISTRY[key])
     else:
         if IS_FIRST_RUN:
-            # Data fissa per il pregresso (09 Feb 2026)
             discovery_date = datetime(2026, 2, 9, 10, 0, 0)
         else:
-            # Data attuale per i nuovi inserimenti
             discovery_date = datetime.now()
         
         LINK_REGISTRY[key] = discovery_date.isoformat()
         return discovery_date
 
-# Carica il registro all'avvio
 load_registry()
 
 def send_telegram_alert(title, link, source):
@@ -90,8 +83,7 @@ def send_whatsapp_alert(title, link, source):
     encoded_msg = urllib.parse.quote(message)
     for phone, apikey in zip(WA_PHONES, WA_KEYS):
         try:
-            url = f"https://api.callmebot.com/whatsapp.php?phone={phone}&text={encoded_msg}&apikey={apikey}"
-            requests.get(url, timeout=10)
+            requests.get(f"https://api.callmebot.com/whatsapp.php?phone={phone}&text={encoded_msg}&apikey={apikey}", timeout=10)
             time.sleep(1)
         except: pass
 
@@ -187,6 +179,60 @@ def get_garfagnana_media():
     urls = ["https://organizzazione.cai.it/sez-castelnuovo-garfagnana/news/"]
     return scrape_generic_media(urls, "CAI Castelnuovo G.", "https://organizzazione.cai.it", color="#2980b9")
 
+# --- SCRAPER CAI SCANDICCI (NUOVO) ---
+def get_scandicci_events():
+    url = "https://www.caiscandicci.it/programma-attivita/eventi-in-corso.html"
+    base_domain = "https://www.caiscandicci.it"
+    source_name = "CAI Scandicci"
+    color = "#16a085"
+    events = []
+    
+    print(f"Scraping {source_name}...")
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        resp = requests.get(url, headers=headers, timeout=20)
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        
+        # Cerca tutti i link
+        for link in soup.find_all('a', href=True):
+            href = link['href']
+            # Filtra link spazzatura o esterni non pertinenti
+            if "javascript" in href or "mailto" in href: continue
+            
+            full_link = urllib.parse.urljoin(base_domain, href)
+            
+            # Cerca testo nel link o nel genitore (es. riga tabella o elemento lista)
+            title = link.get_text(strip=True)
+            container = link.find_parent(['tr', 'li', 'p', 'div'])
+            text_context = container.get_text(" ", strip=True) if container else title
+            
+            # Cerca una data valida 2026 nel contesto
+            event_date = extract_event_date_from_text(text_context)
+            
+            if event_date and event_date.year >= 2026:
+                # Usa il testo del link come titolo, se è troppo breve usa il contesto
+                full_title_text = title if len(title) > 5 else text_context[:100]
+                full_title = f"⛰️ {full_title_text}"
+                
+                if any(e['link'] == full_link for e in events): continue
+                
+                pub_date = get_pub_date(full_link)
+                
+                events.append({
+                    "title": full_title,
+                    "link": full_link,
+                    "date": pub_date,
+                    "summary": f"Evento CAI Scandicci del {event_date.strftime('%d/%m/%Y')}",
+                    "source": source_name,
+                    "color": color,
+                    "event_date": event_date
+                })
+                print(f"   + Scandicci Trovato: {full_title}")
+                
+    except Exception as e:
+        print(f"Errore Scandicci: {e}")
+    return events
+
 # --- SCRAPER CAI BARGA ROBUSTO ---
 def get_barga_activities():
     url = "https://www.caibarga.it/Gite.htm"
@@ -199,22 +245,18 @@ def get_barga_activities():
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         resp = requests.get(url, headers=headers, timeout=20)
-        # Forza rilevamento encoding per caratteri speciali
         resp.encoding = resp.apparent_encoding 
-        soup = BeautifulSoup(resp.text, 'html.parser')
+        soup = BeautifulSoup(resp.content, 'html.parser')
         
         for row in soup.find_all(['tr', 'p', 'li', 'td']):
             text = row.get_text(" ", strip=True)
             if len(text) < 5: continue
 
-            # 1. CERCA DATA (dd/mm o dd.mm)
-            if not re.search(r'\d{1,2}[./-]\d{1,2}', text):
-                continue
+            if not re.search(r'\d{1,2}[./-]\d{1,2}', text): continue
             
             event_date = extract_event_date_from_text(text)
             
             if event_date and event_date.year >= 2026:
-                # 2. CERCA LINK
                 link_tag = row.find('a')
                 if not link_tag: continue
                 href = link_tag.get('href')
@@ -222,9 +264,8 @@ def get_barga_activities():
                 
                 full_link = urllib.parse.urljoin(base_domain, href)
                 
-                # 3. CLEAN TITLE
                 clean_title = text
-                clean_title = re.sub(r'\d{1,2}[./-]\d{1,2}[./-]?\d{0,4}', '', clean_title) # Rimuove data
+                clean_title = re.sub(r'\d{1,2}[./-]\d{1,2}[./-]?\d{0,4}', '', clean_title)
                 clean_title = clean_title.replace("Programma", "").replace("Scarica", "").strip()
                 clean_title = clean_title.strip("- .|").strip()
                 if len(clean_title) < 4: clean_title = "Attività CAI Barga"
@@ -233,7 +274,6 @@ def get_barga_activities():
                 
                 if any(e['link'] == full_link for e in events): continue
                 
-                # 4. REGISTRO
                 pub_date = get_pub_date(full_link)
 
                 events.append({
@@ -255,11 +295,9 @@ def get_massa_events():
     print(f"Scraping {source_name}...")
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
-        # verify=False per SSL scaduti/errati
         resp = requests.get(url, headers=headers, timeout=20, verify=False)
         soup = BeautifulSoup(resp.text, 'html.parser')
         
-        # Cerca Titoli con Link (pattern standard blog)
         for item in soup.find_all(['h2', 'h3', 'h4', 'h5']):
             link_tag = item.find('a')
             if not link_tag: continue
@@ -270,12 +308,10 @@ def get_massa_events():
             title_text = link_tag.get_text(strip=True)
             if not title_text: continue
 
-            # Cerca data nel contenitore padre
             container = item.find_parent(['div', 'article']) or item.parent
             container_text = container.get_text(" ", strip=True)
             event_date = extract_event_date_from_text(container_text)
             
-            # Fallback data da URL
             if not event_date:
                 match_url = re.search(r'/(\d{4})/(\d{2})/', full_link)
                 if match_url:
@@ -286,7 +322,6 @@ def get_massa_events():
                 full_title = f"⛰️ {title_text}"
                 if any(e['link'] == full_link for e in events): continue
                 
-                # REGISTRO
                 pub_date = get_pub_date(full_link)
 
                 events.append({
@@ -334,12 +369,10 @@ def get_carrara_calendar():
                     full_title = f"⛰️ {title}"
                     if any(e['link'] == link for e in events): continue
                     
-                    # Usa data evento come pubblicazione per stabilità (richiesta specifica)
-                    # Ma salviamo comunque nel registro per coerenza futura
                     get_pub_date(link) 
                     
                     events.append({
-                        "title": full_title, "link": link, "date": event_date, # Ordinamento per data evento
+                        "title": full_title, "link": link, "date": event_date, 
                         "summary": f"Data: {event_date.strftime('%d/%m/%Y')}",
                         "source": source_name, "color": color, "event_date": event_date
                     })
@@ -352,7 +385,7 @@ def get_garfagnana_events():
     source_name = "CAI Garfagnana"
     color = "#2980b9"
     events = []
-    fixed_date = datetime(2026, 2, 9) # Data fissa richiesta
+    fixed_date = datetime(2026, 2, 9)
     
     print(f"Scraping PDF {source_name}...")
     try:
@@ -370,7 +403,6 @@ def get_garfagnana_events():
                     if event_date and event_date.year >= 2026:
                         title = lines[1].strip() if len(lines) > 1 else "Evento CAI Garfagnana"
                         full_title = f"⛰️ {title}"
-                        # Registro con discriminante titolo
                         get_pub_date(pdf_url, full_title) 
                         
                         events.append({
@@ -459,8 +491,9 @@ GROUPS = {
             {"url": "https://cailucca.it/wp/feed/", "name": "CAI Lucca", "color": "#34495e"},
             {"url": "https://caipontremoli.it/feed/", "name": "CAI Pontremoli", "color": "#9b59b6"},
             {"url": "https://www.caifivizzano.it/feed/", "name": "CAI Fivizzano", "color": "#27ae60"},
+            # CAI BARGA GESTITO DALLO SCRAPER SPECIFICO
             {"url": "https://www.caibarga.it/", "name": "CAI Barga", "color": "#d35400"},
-            {"url": "https://www.caimaresca.it/feed/", "name": "CAI Maresca", "color": "#16b085"},
+            {"url": "https://www.caimaresca.it/feed/", "name": "CAI Maresca", "color": "#16a085"},
             {"url": "https://www.caicastelnuovogarfagnana.org/feed/", "name": "CAI Castelnuovo G.", "color": "#2980b9"},
             {"url": "https://www.caipescia.it/feed/", "name": "CAI Pescia", "color": "#e67e22"}
          ]
@@ -473,12 +506,13 @@ GROUPS = {
             {"url": "https://www.caipontassieve.it/feed/", "name": "CAI Pontassieve", "color": "#3b5998"},
             {"url": "https://www.caiprato.it/feed/", "name": "CAI Prato", "color": "#d35400"},
             {"url": "https://www.caivaldarnoinferiore.it/feed/", "name": "CAI Valdarno Inf.", "color": "#1abc9c"},
-            {"url": "https://www.caiscandicci.it/feed/", "name": "CAI Scandicci", "color": "#16a085"}
+            # SCANDICCI GESTITO DA SCRAPER SPECIFICO (RIMOSSO FEED)
+            {"url": "https://www.caiscandicci.it/", "name": "CAI Scandicci", "color": "#16a085"}
         ]
     }
 }
 
-# --- GENERAZIONE HTML ---
+# --- GENERAZIONE HTML E NAVIGAZIONE ---
 def get_nav_html(current_page):
     nav = '<nav style="margin-bottom: 30px; text-align: center; line-height: 2.5;">'
     style_cal = 'display: inline-block; text-decoration: none; margin: 5px; padding: 8px 15px; border-radius: 20px; font-weight: bold; border: 2px solid #e67e22;'
@@ -552,12 +586,13 @@ for filename, group_data in GROUPS.items():
     if "CAI Carrara" in site_names: extra.extend(get_carrara_calendar())
     if "CAI Barga" in site_names: extra.extend(get_barga_activities())
     if "CAI Massa" in site_names: extra.extend(get_massa_events())
+    if "CAI Scandicci" in site_names: extra.extend(get_scandicci_events()) # NUOVO SCRAPER
     if "CAI Castelnuovo G." in site_names: 
         extra.extend(get_garfagnana_events())
         extra.extend(get_garfagnana_media())
 
     for ev in extra:
-        if ev['date'].year < 2026 and ev['date'].year != 2023: continue # 2023 è default per media senza data
+        if ev['date'].year < 2026 and ev['date'].year != 2023: continue
         if not ev.get('event_date'):
             extracted = extract_event_date_from_text(ev['title'])
             if extracted: ev['event_date'] = extracted
