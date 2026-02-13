@@ -128,19 +128,16 @@ def extract_event_date_from_text(text):
     months = {'gennaio': 1, 'gen': 1, 'febbraio': 2, 'feb': 2, 'marzo': 3, 'mar': 3, 'aprile': 4, 'apr': 4, 'maggio': 5, 'mag': 5, 'giugno': 6, 'giu': 6, 'luglio': 7, 'lug': 7, 'agosto': 8, 'ago': 8, 'settembre': 9, 'set': 9, 'sett': 9, 'ottobre': 10, 'ott': 10, 'novembre': 11, 'nov': 11, 'dicembre': 12, 'dic': 12}
     today = datetime.now()
     
-    # 1. Formato standard dd/mm/yyyy
     match_full = re.search(r'(\d{1,2})[./-](\d{1,2})[./-](\d{4})', text)
     if match_full:
         try: return datetime(int(match_full.group(3)), int(match_full.group(2)), int(match_full.group(1)))
         except: pass
 
-    # 2. Formato breve dd/mm/yy (es. 08/02/26)
     match_short_year = re.search(r'(\d{1,2})[./-](\d{1,2})[./-](26)', text)
     if match_short_year:
         try: return datetime(2026, int(match_short_year.group(2)), int(match_short_year.group(1)))
         except: pass
 
-    # 3. Formato testuale
     for m_name, m_num in months.items():
         range_pattern = r'(\d{1,2})\s*(?:[-/e]|al|&)\s*(?:\d{1,2})\s+(?:di\s+)?' + m_name
         match_range = re.search(range_pattern, text)
@@ -162,7 +159,6 @@ def extract_event_date_from_text(text):
                 return datetime(y, m_num, d)
             except: pass
 
-    # 4. Formato brevissimo dd/mm
     match_short = re.search(r'(\d{1,2})[./-](\d{1,2})', text)
     if match_short:
         try:
@@ -195,9 +191,10 @@ def get_pescia_events():
     source_name = "CAI Pescia"
     color = "#e67e22"
     events = []
+    
     print(f"Scraping {source_name}...")
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         resp = requests.get(url, headers=headers, timeout=20, verify=False)
         soup = BeautifulSoup(resp.text, 'html.parser')
         
@@ -216,6 +213,7 @@ def get_pescia_events():
                 full_title = f"⛰️ {clean_title}"
                 if any(e['link'] == full_link for e in events): continue
                 pub_date = get_pub_date(full_link)
+                
                 events.append({
                     "title": full_title, "link": full_link, "date": pub_date,
                     "summary": f"Evento CAI Pescia del {event_date.strftime('%d/%m/%Y')}",
@@ -262,7 +260,7 @@ def get_scandicci_events():
     except Exception as e: print(f"Errore Scandicci: {e}")
     return events
 
-# --- SCRAPER CAI BARGA ROBUSTO ---
+# --- SCRAPER CAI BARGA (FIX TABELLA 4 COLONNE) ---
 def get_barga_activities():
     url = "https://www.caibarga.it/Gite.htm"
     base_domain = "https://www.caibarga.it"
@@ -277,44 +275,62 @@ def get_barga_activities():
         resp.encoding = resp.apparent_encoding 
         soup = BeautifulSoup(resp.content, 'html.parser')
         
-        for row in soup.find_all(['tr', 'p', 'li', 'td']):
-            text = row.get_text(" ", strip=True)
-            if len(text) < 5: continue
+        # Iterazione sulle righe della tabella
+        for row in soup.find_all('tr'):
+            cols = row.find_all('td')
+            # La tabella ha struttura: Data | Titolo | ... | Link
+            if len(cols) < 2: continue
 
-            # Rimuove filtri regex troppo stretti per lasciar lavorare l'estrattore date
-            event_date = extract_event_date_from_text(text)
+            # 1. DATA (Colonna 1)
+            date_text = cols[0].get_text(strip=True)
+            match_date = re.search(r'(\d{1,2})[./-](\d{1,2})', date_text)
+            if not match_date: continue
             
-            if event_date and event_date.year >= 2026:
-                link_tag = row.find('a')
-                if not link_tag: continue
-                
-                href = link_tag.get('href')
-                if not href or "mailto" in href: continue
-                
-                # PULIZIA URL (FIX SPAZI E BACKSLASH)
-                href = href.replace(" ", "%20").replace("\\", "/")
-                full_link = urllib.parse.urljoin(base_domain, href)
-                
-                clean_title = text
-                clean_title = re.sub(r'\d{1,2}[./-]\d{1,2}[./-]?\d{0,4}', '', clean_title)
-                clean_title = clean_title.replace("Programma", "").replace("Scarica", "").strip()
-                clean_title = clean_title.strip("- .|").strip()
-                if len(clean_title) < 4: clean_title = "Attività CAI Barga"
-                
-                full_title = f"⛰️ {clean_title}"
-                if any(e['link'] == full_link for e in events): continue
-                pub_date = get_pub_date(full_link)
+            # Costruzione data 2026
+            day, month = int(match_date.group(1)), int(match_date.group(2))
+            try:
+                event_date = datetime(2026, month, day)
+            except: continue
 
-                events.append({
-                    "title": full_title, "link": full_link, "date": pub_date,
-                    "summary": f"Gita CAI Barga del {event_date.strftime('%d/%m/%Y')}",
-                    "source": source_name, "color": color, "event_date": event_date
-                })
-                print(f"   + Barga Trovato: {full_title}")
+            # 2. TITOLO (Colonna 2)
+            # Usa 'separator' per splittare i <br> e prendere solo la prima parte (il titolo vero)
+            title_text = cols[1].get_text(separator='|', strip=True)
+            title = title_text.split('|')[0].strip()
+            
+            if len(title) < 3: title = "Gita Sociale CAI Barga"
+            full_title = f"⛰️ {title}"
+
+            # 3. LINK (Ultima colonna o quella con il link)
+            link_tag = None
+            # Cerca il link nelle colonne finali (dalla 3 in poi, o l'ultima)
+            search_cols = cols[2:] if len(cols) > 2 else [cols[-1]]
+            for c in search_cols:
+                link_tag = c.find('a')
+                if link_tag: break
+            
+            if not link_tag: continue
+
+            href = link_tag.get('href')
+            if not href or "mailto" in href: continue
+            
+            # Fix URL (spazi e backslash)
+            href = href.replace(" ", "%20").replace("\\", "/")
+            full_link = urllib.parse.urljoin(base_domain, href)
+            
+            if any(e['link'] == full_link for e in events): continue
+            pub_date = get_pub_date(full_link)
+
+            events.append({
+                "title": full_title, "link": full_link, "date": pub_date,
+                "summary": f"Gita CAI Barga del {event_date.strftime('%d/%m/%Y')}",
+                "source": source_name, "color": color, "event_date": event_date
+            })
+            print(f"   + Barga Trovato: {full_title}")
+
     except Exception as e: print(f"Err Barga: {e}")
     return events
 
-# --- SCRAPER CAI MASSA (IMG LINK) ---
+# --- SCRAPER CAI MASSA (IMG SRC FIX + DATA 2026) ---
 def get_massa_events():
     url = "https://www.caimassa.com/"
     base_domain = "https://www.caimassa.com/"
@@ -325,16 +341,20 @@ def get_massa_events():
     print(f"Scraping {source_name}...")
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
+        # verify=False per SSL scaduti/errati
         resp = requests.get(url, headers=headers, timeout=20, verify=False)
         soup = BeautifulSoup(resp.text, 'html.parser')
         
+        # 1. CERCA TITOLI h2 class='news_title'
         titles = soup.find_all('h2', class_='news_title')
         
         for h2 in titles:
             title_text = h2.get_text(strip=True)
             if not title_text: continue
             
+            # 2. CERCA L'IMMAGINE SUCCESSIVA (CHE È IL LINK)
             img_tag = h2.find_next('img')
+            
             if not img_tag: continue
             src = img_tag.get('src')
             if not src: continue
@@ -343,9 +363,13 @@ def get_massa_events():
             src = src.replace(" ", "%20")
             full_link = urllib.parse.urljoin(base_domain, src)
             
+            # 3. CERCA LA DATA NEL CONTENITORE
             container = h2.parent
-            container_text = container.get_text(" ", strip=True) if container else ""
-            event_date = extract_event_date_from_text(container_text)
+            if container:
+                container_text = container.get_text(" ", strip=True)
+                event_date = extract_event_date_from_text(container_text)
+            else:
+                event_date = None
             
             if not event_date:
                 context = ""
@@ -355,7 +379,9 @@ def get_massa_events():
 
             if event_date and event_date.year >= 2026:
                 full_title = f"⛰️ {title_text}"
+                
                 if any(e['link'] == full_link for e in events): continue
+                
                 pub_date = get_pub_date(full_link) 
 
                 events.append({
@@ -364,6 +390,7 @@ def get_massa_events():
                     "source": source_name, "color": color, "event_date": event_date
                 })
                 print(f"   + Massa Trovato: {full_title}")
+
     except Exception as e: print(f"Err Massa: {e}")
     return events
 
@@ -420,7 +447,6 @@ def get_garfagnana_events():
     color = "#2980b9"
     events = []
     fixed_date = datetime(2026, 2, 9)
-    
     print(f"Scraping PDF {source_name}...")
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
