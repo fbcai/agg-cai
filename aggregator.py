@@ -12,6 +12,8 @@ from facebook_scraper import get_posts
 import urllib.parse
 from pypdf import PdfReader
 import urllib3
+
+# Disabilita i warning di sicurezza per siti vecchi (fondamentale per Massa/Barga)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- CONFIGURAZIONE NOTIFICHE ---
@@ -260,7 +262,7 @@ def get_scandicci_events():
     except Exception as e: print(f"Errore Scandicci: {e}")
     return events
 
-# --- SCRAPER CAI BARGA (FIX TABELLA 4 COLONNE) ---
+# --- SCRAPER CAI BARGA (DEBUG & FIX) ---
 def get_barga_activities():
     url = "https://www.caibarga.it/Gite.htm"
     base_domain = "https://www.caibarga.it"
@@ -271,49 +273,52 @@ def get_barga_activities():
     print(f"Scraping {source_name}...")
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
-        resp = requests.get(url, headers=headers, timeout=20)
+        # Aggiunto verify=False perché siti vecchi spesso hanno SSL scaduti
+        resp = requests.get(url, headers=headers, timeout=20, verify=False)
         resp.encoding = resp.apparent_encoding 
         soup = BeautifulSoup(resp.content, 'html.parser')
         
-        # Iterazione sulle righe della tabella
         for row in soup.find_all('tr'):
             cols = row.find_all('td')
-            # La tabella ha struttura: Data | Titolo | ... | Link
+            # Stampa di debug per capire cosa vede lo script
+            row_text = row.get_text(" ", strip=True)
+            
             if len(cols) < 2: continue
 
-            # 1. DATA (Colonna 1)
+            # 1. DATA (Colonna 1) - Regex flessibile con spazi opzionali
             date_text = cols[0].get_text(strip=True)
-            match_date = re.search(r'(\d{1,2})[./-](\d{1,2})', date_text)
+            match_date = re.search(r'(\d{1,2})\s*[./-]\s*(\d{1,2})', date_text)
+            
             if not match_date: continue
             
-            # Costruzione data 2026
             day, month = int(match_date.group(1)), int(match_date.group(2))
             try:
                 event_date = datetime(2026, month, day)
             except: continue
 
             # 2. TITOLO (Colonna 2)
-            # Usa 'separator' per splittare i <br> e prendere solo la prima parte (il titolo vero)
             title_text = cols[1].get_text(separator='|', strip=True)
             title = title_text.split('|')[0].strip()
             
             if len(title) < 3: title = "Gita Sociale CAI Barga"
             full_title = f"⛰️ {title}"
 
-            # 3. LINK (Ultima colonna o quella con il link)
+            # 3. LINK (Cerca in tutte le celle dalla 3^ in poi)
             link_tag = None
-            # Cerca il link nelle colonne finali (dalla 3 in poi, o l'ultima)
-            search_cols = cols[2:] if len(cols) > 2 else [cols[-1]]
-            for c in search_cols:
+            for c in cols[2:]:
                 link_tag = c.find('a')
                 if link_tag: break
             
+            # Fallback: Se non trova nelle ultime colonne, cerca in tutta la riga (tranne la data)
+            if not link_tag:
+               link_tag = row.find('a') 
+
             if not link_tag: continue
 
             href = link_tag.get('href')
             if not href or "mailto" in href: continue
             
-            # Fix URL (spazi e backslash)
+            # PULIZIA URL
             href = href.replace(" ", "%20").replace("\\", "/")
             full_link = urllib.parse.urljoin(base_domain, href)
             
@@ -325,7 +330,7 @@ def get_barga_activities():
                 "summary": f"Gita CAI Barga del {event_date.strftime('%d/%m/%Y')}",
                 "source": source_name, "color": color, "event_date": event_date
             })
-            print(f"   + Barga Trovato: {full_title}")
+            print(f"   + Barga Trovato: {full_title} -> {event_date.strftime('%d/%m')}")
 
     except Exception as e: print(f"Err Barga: {e}")
     return events
@@ -352,6 +357,11 @@ def get_massa_events():
             title_text = h2.get_text(strip=True)
             if not title_text: continue
             
+            # FILTRO ANNO NEL TITOLO
+            match_year = re.search(r'\b(20\d{2})\b', title_text)
+            if match_year and int(match_year.group(1)) != 2026:
+                continue 
+
             # 2. CERCA L'IMMAGINE SUCCESSIVA (CHE È IL LINK)
             img_tag = h2.find_next('img')
             
@@ -377,7 +387,7 @@ def get_massa_events():
                     context += sib.get_text(" ", strip=True) + " "
                 event_date = extract_event_date_from_text(context)
 
-            if event_date and event_date.year >= 2026:
+            if event_date and event_date.year == 2026:
                 full_title = f"⛰️ {title_text}"
                 
                 if any(e['link'] == full_link for e in events): continue
