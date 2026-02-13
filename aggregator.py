@@ -58,8 +58,10 @@ def get_pub_date(link, title_discriminator=""):
         return datetime.fromisoformat(LINK_REGISTRY[key])
     else:
         if IS_FIRST_RUN:
+            # Data fissa per il pregresso (09 Feb 2026)
             discovery_date = datetime(2026, 2, 9, 10, 0, 0)
         else:
+            # Data attuale per i nuovi inserimenti
             discovery_date = datetime.now()
         
         LINK_REGISTRY[key] = discovery_date.isoformat()
@@ -179,7 +181,7 @@ def get_garfagnana_media():
     urls = ["https://organizzazione.cai.it/sez-castelnuovo-garfagnana/news/"]
     return scrape_generic_media(urls, "CAI Castelnuovo G.", "https://organizzazione.cai.it", color="#2980b9")
 
-# --- SCRAPER CAI SCANDICCI (NUOVO) ---
+# --- SCRAPER CAI SCANDICCI ---
 def get_scandicci_events():
     url = "https://www.caiscandicci.it/programma-attivita/eventi-in-corso.html"
     base_domain = "https://www.caiscandicci.it"
@@ -193,44 +195,30 @@ def get_scandicci_events():
         resp = requests.get(url, headers=headers, timeout=20)
         soup = BeautifulSoup(resp.text, 'html.parser')
         
-        # Cerca tutti i link
         for link in soup.find_all('a', href=True):
             href = link['href']
-            # Filtra link spazzatura o esterni non pertinenti
             if "javascript" in href or "mailto" in href: continue
             
             full_link = urllib.parse.urljoin(base_domain, href)
-            
-            # Cerca testo nel link o nel genitore (es. riga tabella o elemento lista)
             title = link.get_text(strip=True)
             container = link.find_parent(['tr', 'li', 'p', 'div'])
             text_context = container.get_text(" ", strip=True) if container else title
-            
-            # Cerca una data valida 2026 nel contesto
             event_date = extract_event_date_from_text(text_context)
             
             if event_date and event_date.year >= 2026:
-                # Usa il testo del link come titolo, se è troppo breve usa il contesto
                 full_title_text = title if len(title) > 5 else text_context[:100]
                 full_title = f"⛰️ {full_title_text}"
                 
                 if any(e['link'] == full_link for e in events): continue
-                
                 pub_date = get_pub_date(full_link)
                 
                 events.append({
-                    "title": full_title,
-                    "link": full_link,
-                    "date": pub_date,
+                    "title": full_title, "link": full_link, "date": pub_date,
                     "summary": f"Evento CAI Scandicci del {event_date.strftime('%d/%m/%Y')}",
-                    "source": source_name,
-                    "color": color,
-                    "event_date": event_date
+                    "source": source_name, "color": color, "event_date": event_date
                 })
                 print(f"   + Scandicci Trovato: {full_title}")
-                
-    except Exception as e:
-        print(f"Errore Scandicci: {e}")
+    except Exception as e: print(f"Errore Scandicci: {e}")
     return events
 
 # --- SCRAPER CAI BARGA ROBUSTO ---
@@ -271,9 +259,7 @@ def get_barga_activities():
                 if len(clean_title) < 4: clean_title = "Attività CAI Barga"
                 
                 full_title = f"⛰️ {clean_title}"
-                
                 if any(e['link'] == full_link for e in events): continue
-                
                 pub_date = get_pub_date(full_link)
 
                 events.append({
@@ -321,7 +307,6 @@ def get_massa_events():
             if event_date and event_date.year >= 2026:
                 full_title = f"⛰️ {title_text}"
                 if any(e['link'] == full_link for e in events): continue
-                
                 pub_date = get_pub_date(full_link)
 
                 events.append({
@@ -421,41 +406,81 @@ def scrape_generic_media(urls, source_name, base_domain, color="#3498db"):
     EXTS = ('.pdf', '.jpg', '.jpeg', '.png', '.webp')
     media_events = []
     seen = set()
+    
+    # LISTA UNIFICATA DI PAROLE VIETATE (LINK e IMMAGINI)
+    bad_keywords = [
+        'logo', 'icon', 'caiweb', 'stemma', 'facebook', 'whatsapp',
+        'instagram', 'aquila', 'cropped', 'retina', 'button', 'user', 'admin',
+        'cropped-aquila'
+    ]
+
     for url in urls:
         print(f"Scraping media {source_name}: {url}...")
         try:
             headers = {'User-Agent': 'Mozilla/5.0'}
             resp = requests.get(url, headers=headers, timeout=15)
             soup = BeautifulSoup(resp.text, 'html.parser')
+            
+            # 1. CERCA LINK A FILE PDF/IMG
             for link in soup.find_all('a'):
                 href = link.get('href')
                 if href and href.lower().endswith(EXTS):
                     full = urllib.parse.urljoin(base_domain, href.strip())
-                    if full in seen or "aquila" in full.lower(): continue
+                    
+                    # Filtro Unificato
+                    if any(bad in full.lower() for bad in bad_keywords): continue
+                    if full in seen: continue
+                    
+                    is_pdf = full.lower().endswith('.pdf')
+                    icon = "📄" if is_pdf else "🖼️"
+                    type_lbl = "[PDF]" if is_pdf else "[IMG]"
+                    
                     title = link.get_text(strip=True)
                     if not title:
                         img = link.find('img')
                         if img: title = img.get('alt')
-                    if not title or "scarica" in title.lower(): title = clean_filename(full)
-                    seen.add(full)
                     
+                    bad_title_words = ['download', 'scarica', 'pdf', 'clicca', 'leggi', 'programma', 'locandina', 'volantino']
+                    if not title or any(w in title.lower() for w in bad_title_words): 
+                        title = clean_filename(full)
+                    
+                    seen.add(full)
                     pub_date = get_pub_date(full)
-                    full_title = f"📄 {title}" if full.endswith('.pdf') else f"🖼️ {title}"
+                    full_title = f"{icon} {type_lbl} {title}"
+                    
                     if is_recent(pub_date): send_alerts(full_title, full, source_name)
-                    media_events.append({"title": full_title, "link": full, "date": pub_date, "summary": "Media rilevato", "source": source_name, "color": color, "event_date": None})
+                    
+                    media_events.append({
+                        "title": full_title, "link": full, "date": pub_date, 
+                        "summary": f"Media ({type_lbl}) rilevato su {source_name}.", 
+                        "source": source_name, "color": color, "event_date": None
+                    })
             
+            # 2. CERCA IMMAGINI INCORPORATE
             for img in soup.find_all('img'):
                 src = img.get('src')
                 if src and src.lower().endswith(EXTS):
                     full = urllib.parse.urljoin(base_domain, src.strip())
-                    if full in seen or "logo" in full.lower(): continue
-                    title = img.get('alt') or clean_filename(full)
+                    
+                    # Filtro Unificato
+                    if any(bad in full.lower() for bad in bad_keywords): continue
+                    if full in seen: continue
+                    
+                    title = img.get('alt')
+                    if not title: title = clean_filename(full)
+                    
                     seen.add(full)
                     pub_date = get_pub_date(full)
-                    full_title = f"🖼️ {title}"
+                    full_title = f"🖼️ [IMG] {title}"
+                    
                     if is_recent(pub_date): send_alerts(full_title, full, source_name)
-                    media_events.append({"title": full_title, "link": full, "date": pub_date, "summary": "Img rilevata", "source": source_name, "color": color, "event_date": None})
-        except: pass
+                    
+                    media_events.append({
+                        "title": full_title, "link": full, "date": pub_date, 
+                        "summary": "Immagine rilevata nella pagina.", 
+                        "source": source_name, "color": color, "event_date": None
+                    })
+        except Exception as e: print(f"Err media {url}: {e}")
     return media_events
 
 # --- CONFIGURAZIONE GRUPPI ---
@@ -491,7 +516,6 @@ GROUPS = {
             {"url": "https://cailucca.it/wp/feed/", "name": "CAI Lucca", "color": "#34495e"},
             {"url": "https://caipontremoli.it/feed/", "name": "CAI Pontremoli", "color": "#9b59b6"},
             {"url": "https://www.caifivizzano.it/feed/", "name": "CAI Fivizzano", "color": "#27ae60"},
-            # CAI BARGA GESTITO DALLO SCRAPER SPECIFICO
             {"url": "https://www.caibarga.it/", "name": "CAI Barga", "color": "#d35400"},
             {"url": "https://www.caimaresca.it/feed/", "name": "CAI Maresca", "color": "#16a085"},
             {"url": "https://www.caicastelnuovogarfagnana.org/feed/", "name": "CAI Castelnuovo G.", "color": "#2980b9"},
@@ -506,7 +530,6 @@ GROUPS = {
             {"url": "https://www.caipontassieve.it/feed/", "name": "CAI Pontassieve", "color": "#3b5998"},
             {"url": "https://www.caiprato.it/feed/", "name": "CAI Prato", "color": "#d35400"},
             {"url": "https://www.caivaldarnoinferiore.it/feed/", "name": "CAI Valdarno Inf.", "color": "#1abc9c"},
-            # SCANDICCI GESTITO DA SCRAPER SPECIFICO (RIMOSSO FEED)
             {"url": "https://www.caiscandicci.it/", "name": "CAI Scandicci", "color": "#16a085"}
         ]
     }
@@ -586,7 +609,7 @@ for filename, group_data in GROUPS.items():
     if "CAI Carrara" in site_names: extra.extend(get_carrara_calendar())
     if "CAI Barga" in site_names: extra.extend(get_barga_activities())
     if "CAI Massa" in site_names: extra.extend(get_massa_events())
-    if "CAI Scandicci" in site_names: extra.extend(get_scandicci_events()) # NUOVO SCRAPER
+    if "CAI Scandicci" in site_names: extra.extend(get_scandicci_events()) # SCANDICCI ADDED
     if "CAI Castelnuovo G." in site_names: 
         extra.extend(get_garfagnana_events())
         extra.extend(get_garfagnana_media())
