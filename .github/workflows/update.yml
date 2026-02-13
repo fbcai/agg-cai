@@ -29,16 +29,22 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python aggregator.py
 
-      - name: Commit and Push
+      - name: Commit and push changes
         run: |
-          git config --global user.name 'GitHub Action'
-          git config --global user.email 'action@github.com'
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          
+          # 1. Metti in coda (stage) tutti i file modificati
           git add *.html
-          # Se ci sono cambiamenti, fai commit, POI SCARICA (pull) eventuali modifiche remote, POI carica (push)
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Aggiornamento automatico" && git pull --rebase origin main && git push)
-
-          # --- IMPORTANTE: SALVA IL REGISTRO ---
-          git add link_registry.json 2>/dev/null || true
-          # -------------------------------------
-          git commit -m "Aggiornamento eventi e registro" || exit 0
-          git push
+          git add link_registry.json
+          
+          # 2. Fai il Commit (Salva localmente).
+          # Il "|| echo..." serve a non far fallire lo script se non ci sono novità
+          git commit -m "Aggiornamento eventi e registro" || echo "Nessuna modifica da committare"
+          
+          # 3. ORA puoi fare il pull (scaricare aggiornamenti remoti)
+          # Usiamo --rebase per applicare le tue modifiche SOPRA quelle remote
+          git pull --rebase origin main || git pull --rebase origin master
+          
+          # 4. Infine invia tutto
+          git push   
